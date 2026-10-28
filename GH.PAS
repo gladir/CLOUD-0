@@ -4,9 +4,101 @@
   @website(https://www.gladir.com/vie)
   @abstract(Target: Free Pascal 3.x)
 
-  GH : clone de la commande gh (GitHub CLI).
+  GH : clone de la commande gh (GitHub CLI, https://cli.github.com).
 
-  (documentation completee a la fin du developpement)
+  Syntaxe generale :
+   gh <commande> <sous-commande> [parametres] [arguments]
+
+  Exemples :
+   gh repo list | gh repo clone OWNER/REPO | gh issue list | gh pr create
+   gh workflow list | gh run view 123456 --log | gh api repos/cli/cli --jq ".stargazers_count"
+
+  Commandes prises en charge (chacune accepte --help, ex. : gh pr merge --help) :
+   auth      login, logout, refresh, setup-git, status, switch, token
+   browse    ouvre un depot, un ticket, un fichier, un commit, le wiki, etc.
+   codespace list, create, delete, edit, stop, view (ssh, cp, ports, logs, code,
+             rebuild et jupyter : signalees comme non prises en charge)
+   gist      create, list, view, edit, delete, rename, clone
+   issue     create, list, view, edit, close, reopen, comment, delete, develop,
+             lock, unlock, pin, unpin, transfer, status
+   org       list
+   pr        create, list, view, checkout, diff, review, merge, close, reopen,
+             checks, comment, edit, ready, status, lock, unlock, revert,
+             update-branch
+   project   list, view, create, edit, close, copy, delete, mark-template,
+             field-list, field-create, field-delete, item-list, item-add,
+             item-create, item-edit, item-delete, item-archive, link, unlink
+   release   create, list, view, edit, delete, delete-asset, download, upload
+   repo      create, clone, list, view, edit, delete, fork, archive, unarchive,
+             rename, sync, set-default, deploy-key, gitignore, license, autolink
+   run       list, view, watch, cancel, rerun, delete, download
+   workflow  list, view, run, enable, disable
+   cache     list, delete
+   api       requete REST/GraphQL authentifiee (-X, -H, -f, -F, --input,
+             --paginate, --slurp, --jq, --template, --include, --silent)
+   alias     set, list, delete, imports
+   config    get, set, list, clear-cache
+   extension list, install, remove, upgrade, exec, search, browse, create
+   completion bash, zsh, fish, powershell
+   label     list, create, edit, delete, clone
+   ruleset   list, view, check
+   search    repos, issues, prs, code, commits
+   secret    list, set (chiffrement libsodium crypto_box_seal), delete
+   variable  list, get, set, delete
+   ssh-key   list, add, delete          gpg-key   list, add, delete
+   status    version    help [commande | environment | exit-codes | formatting | reference]
+
+  Options generales : --help, --version, -R/--repo [HOTE/]PROPRIETAIRE/DEPOT,
+  --hostname, -w/--web, --json CHAMPS, -q/--jq EXPRESSION, -t/--template MODELE,
+  -L/--limit N, --paginate (gh api).
+
+  Fonctionnement :
+   - authentification : GH_TOKEN, GITHUB_TOKEN (github.com), GH_ENTERPRISE_TOKEN,
+     GITHUB_ENTERPRISE_TOKEN, sinon le jeton de hosts.yml (gh auth login
+     --with-token, ou flux d'appareil OAuth avec --web). La configuration est
+     stockee comme gh : config.yml et hosts.yml dans GH_CONFIG_DIR,
+     $XDG_CONFIG_HOME/gh, ~/.config/gh ou %AppData%\GitHub CLI.
+   - depot courant : option -R, variable GH_REPO ou remotes du depot git
+     (.git/config), avec le reglage gh-resolved de gh repo set-default.
+   - sortie : sur un terminal (ou si GH_FORCE_TTY est defini) les listes sont
+     alignees avec des dates relatives ; sinon elles sont separees par des
+     tabulations, comme gh. --json produit les memes champs que gh ; --jq est un
+     interpreteur jq integre (filtres, fonctions, expressions regulieres, @csv,
+     @tsv, as/reduce/foreach, if/try, |=) et --template un sous-ensemble de
+     text/template de Go avec les fonctions de gh (tablerow, tablerender,
+     timeago, timefmt, truncate, pluck, join, color, hyperlink...).
+   - git : clone, push, checkout, etc. appellent la commande git via le shell.
+   - l'aide est en francais par defaut, et en anglais si la variable
+     d'environnement LANGUAGE commence par EN (ex. : LANGUAGE=EN).
+
+  Reseau :
+   - sous Windows, WinInet (wininet.dll) est utilise (HTTPS, proxy du systeme) ;
+     les redirections sont suivies manuellement et le jeton n'est envoye qu'a
+     l'hote d'origine (jamais aux serveurs de stockage des fichiers) ;
+   - sous les autres systemes, la commande curl est appelee afin que le
+     programme reste utilisable et testable. Sous DOS pur, aucun appel reseau
+     n'est possible.
+   - un hote commencant par http:// ou https:// (GH_HOST=http://localhost:8080)
+     est utilise tel quel, avec l'API sous /api/v3 : pratique pour les tests.
+
+  Limites de ce clone :
+   - pas de couleurs ANSI, de pager, d'invites interactives evoluees ni de
+     trousseau systeme : les jetons sont toujours ecrits dans hosts.yml ;
+   - les commandes codespace qui utilisent le tunnel (ssh, cp, ports, logs,
+     rebuild, jupyter) ne sont pas prises en charge ;
+   - gh run download extrait les archives avec unzip (ou tar sous Windows) ;
+     gh run view --log lit les journaux par job (sans decoupage par etape) ;
+   - gh extension : extensions precompilees ou en script (pas d'interface
+     interactive de navigation) ; gh attestation et gh preview ne sont pas
+     implementes ;
+   - gh pr status, gh status et gh issue status utilisent l'API de recherche.
+
+  Contraintes respectees :
+   - un seul fichier source, aucun fichier d'inclusion ;
+   - la seule unite utilisee est DOS (le reste vient de l'unite System) ;
+   - compilable en Windows 32 bits.
+
+  Compilation : fpc -O3 GH.PAS
 }
 
 Program GH;
@@ -1825,11 +1917,27 @@ Type
  End;
 
 Const
- NDesc=199;
+ NDesc=215;
  Descs:Array[0..NDesc-1]of TCmdDesc=(
+  (P:'agent-task';D:'Work with agent tasks (preview)@@Travaille avec les t'+#131+'ches d''agent (aper'+#135+'u)'),
+  (P:'agent-task create';D:'Create an agent task (preview)@@Cr'+#130+'e une t'+#131+'che d''agent (aper'+#135+'u)'),
+  (P:'agent-task list';D:'List agent tasks (preview)@@Liste les t'+#131+'ches d''agent (aper'+#135+'u)'),
+  (P:'agent-task view';D:'View an agent task session (preview)@@Affiche une session de t'+#131+'che d''agent (aper'+#135+'u)'),
+  (P:'attestation';D:'Work with artifact attestations@@Travaille avec les attestations d''artefacts'),
+  (P:'attestation download';D:'Download an artifact''s attestations for offline use@@T'+#130+'l'+#130+'charge les attestations d''un artefact pour une utilisation hors ligne'),
+  (P:'attestation trusted-root';D:'Output trusted_root.jsonl contents, likely for offline verification@@Affiche le contenu de trusted_root.jsonl pour la v'+#130+'rification hors ligne'),
+  (P:'attestation verify';D:'Verify an artifact''s integrity using attestations@@V'+#130+'rifie l''int'+#130+'grit'+#130+' d''un artefact '+#133+' l''aide des attestations'),
+  (P:'codespace ports forward';D:'Forward ports@@Redirige des ports'),
+  (P:'codespace ports visibility';D:'Change the visibility of the forwarded port@@Change la visibilit'+#130+' du port redirig'+#130+''),
+  (P:'copilot';D:'Run the GitHub Copilot CLI (preview)@@Lance la CLI GitHub Copilot (aper'+#135+'u)'),
+  (P:'licenses';D:'View third-party license information@@Affiche les licences des biblioth'+#138+'ques tierces'),
+  (P:'preview';D:'Execute previews for gh features@@Ex'+#130+'cute les aper'+#135+'us des fonctionnalit'+#130+'s de gh'),
+  (P:'preview prompter';D:'Execute a test program to preview the prompter@@Ex'+#130+'cute un programme de test pour pr'+#130+'visualiser l''invite'),
+  (P:'release verify';D:'Verify the attestation for a release@@V'+#130+'rifie l''attestation d''une version'),
+  (P:'release verify-asset';D:'Verify that a given asset originated from a release@@V'+#130+'rifie qu''un fichier provient bien d''une version'),
   (P:'alias';D:'Create command shortcuts@@Cr'#130'e des raccourcis de commandes'),
   (P:'alias delete';D:'Delete set aliases@@Supprime des alias d'#130'finis'),
-  (P:'alias imports';D:'Import aliases from a YAML file@@Importe des alias depuis un fichier YAML'),
+  (P:'alias import';D:'Import aliases from a YAML file@@Importe des alias depuis un fichier YAML'),
   (P:'alias list';D:'List your aliases@@Liste vos alias'),
   (P:'alias set';D:'Create a shortcut for a gh command@@Cr'#130'e un raccourci pour une commande gh'),
   (P:'api';D:'Make an authenticated GitHub API request@@Effectue une requ'#136'te authentifi'#130+
@@ -1858,17 +1966,13 @@ Const
   (P:'codespace rebuild';D:'Rebuild a codespace@@Reconstruit un codespace'),
   (P:'codespace stop';D:'Stop a running codespace@@Arr'#136'te un codespace en cours d''ex'#130'cution'),
   (P:'codespace view';D:'View details about a codespace@@Affiche les d'#130'tails d''un codespace'),
-  (P:'codespace ssh';D:'SSH into a codespace (not supported by this clone)@@Connexion SSH '#133' un code'+
-   'space (non prise en charge par ce clone)'),
+  (P:'codespace ssh';D:'SSH into a codespace@@Connexion SSH '#133' un codespace'),
   (P:'codespace code';D:'Open a codespace in Visual Studio Code@@Ouvre un codespace dans Visual Stud'+
    'io Code'),
-  (P:'codespace cp';D:'Copy files between local and remote file systems (not supported)@@Copie des f'+
-   'ichiers entre les syst'#138'mes local et distant (non pris en charge)'),
-  (P:'codespace logs';D:'Access codespace logs (not supported)@@Acc'#138'de aux journaux d''un codespace '+
-   '(non pris en charge)'),
+  (P:'codespace cp';D:'Copy files between local and remote file systems@@Copie des fichiers entre les syst'#138'mes local et distant'),
+  (P:'codespace logs';D:'Access codespace logs@@Acc'#138'de aux journaux d''un codespace'),
   (P:'codespace ports';D:'List ports in a codespace@@Liste les ports d''un codespace'),
-  (P:'codespace jupyter';D:'Open a codespace in JupyterLab (not supported)@@Ouvre un codespace dans Ju'+
-   'pyterLab (non pris en charge)'),
+  (P:'codespace jupyter';D:'Open a codespace in JupyterLab@@Ouvre un codespace dans JupyterLab'),
   (P:'completion';D:'Generate shell completion scripts@@G'#130'n'#138're des scripts d''autocompl'#130'tion'),
   (P:'config';D:'Manage configuration for gh@@G'#138're la configuration de gh'),
   (P:'config clear-cache';D:'Clear the cli cache@@Vide le cache de la CLI'),
@@ -1879,7 +1983,7 @@ Const
   (P:'config set';D:'Update configuration with a value for the given key@@Modifie la valeur d''une c'+
    'l'#130' de configuration'),
   (P:'extension';D:'Manage gh extensions@@G'#138're les extensions de gh'),
-  (P:'extension browse';D:'Enter a UI for browsing gh extensions@@Parcourt les extensions gh'),
+  (P:'extension browse';D:'Enter a UI for browsing, adding, and removing extensions@@Parcourt les extensions gh'),
   (P:'extension create';D:'Create a new extension@@Cr'#130'e une nouvelle extension'),
   (P:'extension exec';D:'Execute an installed extension@@Ex'#130'cute une extension install'#130'e'),
   (P:'extension install';D:'Install a gh extension from a repository@@Installe une extension gh depuis '+
@@ -1911,13 +2015,13 @@ Const
   (P:'issue edit';D:'Edit issues@@Modifie des tickets'),
   (P:'issue list';D:'List issues in a repository@@Liste les tickets d''un d'#130'p'#147't'),
   (P:'issue lock';D:'Lock issue conversation@@Verrouille la conversation d''un ticket'),
-  (P:'issue pin';D:'Pin a issue to a repository@@'#144'pingle un ticket dans un d'#130'p'#147't'),
+  (P:'issue pin';D:'Pin a issue@@'#144'pingle un ticket dans un d'#130'p'#147't'),
   (P:'issue reopen';D:'Reopen issue@@Rouvre un ticket'),
   (P:'issue status';D:'Show status of relevant issues@@Affiche l'''#130'tat des tickets pertinents'),
   (P:'issue transfer';D:'Transfer issue to another repository@@Transf'#138're un ticket vers un autre d'#130'p'+
    #147't'),
   (P:'issue unlock';D:'Unlock issue conversation@@D'#130'verrouille la conversation d''un ticket'),
-  (P:'issue unpin';D:'Unpin a issue from a repository@@D'#130'tache un ticket d''un d'#130'p'#147't'),
+  (P:'issue unpin';D:'Unpin a issue@@D'#130'tache un ticket d''un d'#130'p'#147't'),
   (P:'issue view';D:'View an issue@@Affiche un ticket'),
   (P:'label';D:'Manage labels@@G'#138're les '#130'tiquettes'),
   (P:'label clone';D:'Clones labels from one repository to another@@Copie les '#130'tiquettes d''un d'#130'p'+
@@ -1984,7 +2088,7 @@ Const
   (P:'release download';D:'Download release assets@@T'#130'l'#130'charge les fichiers d''une version'),
   (P:'release edit';D:'Edit a release@@Modifie une version'),
   (P:'release list';D:'List releases in a repository@@Liste les versions d''un d'#130'p'#147't'),
-  (P:'release upload';D:'Upload assets to a GitHub Release@@Envoie des fichiers vers une version'),
+  (P:'release upload';D:'Upload assets to a release@@Envoie des fichiers vers une version'),
   (P:'release view';D:'View information about a release@@Affiche les informations d''une version'),
   (P:'repo';D:'Manage repositories@@G'#138're les d'#130'p'#147'ts'),
   (P:'repo archive';D:'Archive a repository@@Archive un d'#130'p'#147't'),
@@ -2011,7 +2115,7 @@ Const
    ' mod'#138'les .gitignore disponibles'),
   (P:'repo gitignore list';D:'List available repository gitignore templates@@Liste les mod'#138'les .git'+
    'ignore disponibles'),
-  (P:'repo gitignore view';D:'View an available repository .gitignore template@@Affiche un mod'#138'le .'+
+  (P:'repo gitignore view';D:'View an available repository gitignore template@@Affiche un mod'#138'le .'+
    'gitignore'),
   (P:'repo license';D:'Explore repository licenses@@Explore les licences de d'#130'p'#147't'),
   (P:'repo license list';D:'List common repository licenses@@Liste les licences courantes'),
@@ -2332,44 +2436,75 @@ Begin
  HelpLine:=Tx(S);
 End;
 
+Function FindOpt(Const Name:AnsiString;IsShort:Boolean):LongInt;forward;
+
+Procedure PrintLearnMore;
+Begin
+ WriteLn;
+ WriteLn(Lg('LEARN MORE','EN SAVOIR PLUS'));
+ WriteLn('  ',Lg('Use `gh <command> <subcommand> --help` for more information about a command.',
+   'Utilisez `gh <commande> <sous-commande> --help` pour plus d''informations sur une commande.'));
+ WriteLn('  ',Lg('Read the manual at https://cli.github.com/manual','Lisez le manuel '+#133+' https://cli.github.com/manual'));
+ WriteLn('  ',Lg('Learn about exit codes using `gh help exit-codes`','Informez-vous sur les codes de sortie avec `gh help exit-codes`'));
+ WriteLn('  ',Lg('Learn about accessibility experiences using `gh help accessibility`',
+   'Informez-vous sur l''accessibilit'+#130+' avec `gh help accessibility`'));
+End;
+
 Procedure PrintCmdHelp;
 Var
- I,W:LongInt;
+ I,W,K,Own:LongInt;
  Ls:TSList;
- S,D:AnsiString;
+ S,D,Al:AnsiString;
  Fl:TSList;
+ Rk:LongInt;
 Begin
  D:=DescOf(CmdPath);
  If D<>'' Then WriteLn(D);
  If CmdLongDesc<>'' Then Begin WriteLn;WriteLn(Tx(CmdLongDesc));End;
  WriteLn;
  WriteLn(Lg('USAGE','UTILISATION'));
+ Own:=0;Rk:=FindOpt('repo',False);
+ For I:=0 to ONum-1 do If I<>Rk Then Inc(Own);
  WriteLn('  gh ',CmdPath,IfThen_(CmdUsage<>'',' '+CmdUsage,''),IfThen_(ONum>0,' [flags]',''));
  If CmdAliases.N>0 Then Begin
   WriteLn;
   WriteLn(Lg('ALIASES','ALIAS'));
+  S:=CmdPath;
+  W:=Length(S);
+  While(W>0)and(S[W]<>' ')do Dec(W);
+  Al:='';
   For I:=0 to CmdAliases.N-1 do Begin
-   S:=CmdPath;
-   W:=Length(S);
-   While(W>0)and(S[W]<>' ')do Dec(W);
-   WriteLn('  gh ',Copy(S,1,W),CmdAliases.A[I]);
+   If I>0 Then Al:=Al+', ';
+   Al:=Al+'gh '+Copy(S,1,W)+CmdAliases.A[I];
+  End;
+  WriteLn('  ',Al);
+ End;
+ If Own>0 Then Begin
+  WriteLn;
+  WriteLn(Lg('FLAGS','OPTIONS'));
+  SClear(Ls);
+  W:=0;
+  For I:=0 to ONum-1 do If I<>Rk Then Begin
+   If ODef[I].Short<>'' Then S:='-'+ODef[I].Short+', ' Else S:='    ';
+   S:=S+'--'+ODef[I].Long;
+   If ODef[I].Meta<>'' Then S:=S+' '+ODef[I].Meta;
+   SAdd(Ls,S);
+   If Length(S)>W Then W:=Length(S);
+  End;
+  K:=0;
+  For I:=0 to ONum-1 do If I<>Rk Then Begin
+   WriteLn('  ',PadR(Ls.A[K],W),'   ',Tx(ODef[I].Help));
+   Inc(K);
   End;
  End;
  WriteLn;
- WriteLn(Lg('FLAGS','OPTIONS'));
- SClear(Ls);
- W:=0;
- For I:=0 to ONum-1 do Begin
-  If ODef[I].Short<>'' Then S:='-'+ODef[I].Short+', ' Else S:='    ';
-  S:=S+'--'+ODef[I].Long;
-  If ODef[I].Meta<>'' Then S:=S+' '+ODef[I].Meta;
-  SAdd(Ls,S);
-  If Length(S)>W Then W:=Length(S);
- End;
- For I:=0 to ONum-1 do WriteLn('  ',PadR(Ls.A[I],W),'   ',Tx(ODef[I].Help));
- WriteLn;
  WriteLn(Lg('INHERITED FLAGS','OPTIONS H'+#144+'RIT'+#144+'ES'));
- WriteLn('      --help   ',Lg('Show help for command','Affiche l''aide de la commande'));
+ If Rk>=0 Then Begin
+  S:='-R, --repo '+ODef[Rk].Meta;
+  WriteLn('      ',PadR('--help',Length(S)-4),'   ',Lg('Show help for command','Affiche l''aide de la commande'));
+  WriteLn('  ',S,'   ',Tx(ODef[Rk].Help));
+ End
+ Else WriteLn('      --help   ',Lg('Show help for command','Affiche l''aide de la commande'));
  If CmdJsonFields<>'' Then Begin
   WriteLn;
   WriteLn(Lg('JSON FIELDS','CHAMPS JSON'));
@@ -2392,12 +2527,7 @@ Begin
   WriteLn(Lg('EXAMPLES','EXEMPLES'));
   For I:=0 to CmdExamples.N-1 do WriteLn('  ',Tx(CmdExamples.A[I]));
  End;
- WriteLn;
- WriteLn(Lg('LEARN MORE','EN SAVOIR PLUS'));
- WriteLn('  ',Lg('Use `gh <command> <subcommand> --help` for more information about a command.',
-   'Utilisez `gh <commande> <sous-commande> --help` pour plus d''informations sur une commande.'));
- WriteLn('  ',Lg('Read the manual at https://cli.github.com/manual',
-   'Lisez le manuel '+#133+' https://cli.github.com/manual'));
+ PrintLearnMore;
 End;
 
 Procedure FlagErr(Const Msg:AnsiString);
@@ -2436,6 +2566,7 @@ End;
 Procedure ParseArgs(First:LongInt);
 Var
  I,K,P,J:LongInt;
+ Fl:TSList;
  A,Nm,V:AnsiString;
  Rest:Boolean;
 Begin
@@ -2445,7 +2576,7 @@ Begin
   A:=ParamStr(I);
   If Rest or((StopAfter>0)and(PosArgs.N>=StopAfter))Then SAdd(PosArgs,A)
   Else If A='--' Then Rest:=True
-  Else If(A='-h')or(A='--help')or(A='/?')Then Begin PrintCmdHelp;Halt(0);End
+  Else If((A='-h')and(FindOpt('h',True)<0))or(A='--help')or(A='/?')Then Begin PrintCmdHelp;Halt(0);End
   Else If StartsWith(A,'--')Then Begin
    Nm:=Copy(A,3,Length(A));V:='';
    P:=Pos('=',Nm);
@@ -2461,6 +2592,7 @@ Begin
     End
     Else OSet[K]:=True;
    End
+   Else If(Pos('[=',ODef[K].Meta)>0)and(P=0)Then SetOptVal(K,'last')
    Else Begin
     If P=0 Then Begin
      If I>=ParamCount Then Begin
@@ -2495,6 +2627,13 @@ Begin
   End
   Else SAdd(PosArgs,A);
   Inc(I);
+ End;
+ If JsonListing and(CmdJsonFields<>'')Then Begin
+  SplitStr(CmdJsonFields,',',Fl);
+  SSort(Fl);
+  WriteLn(StdErr,'Specify one or more comma-separated fields for `--json`:');
+  For J:=0 to Fl.N-1 do WriteLn(StdErr,'  ',Fl.A[J]);
+  Halt(1);
  End;
 End;
 
@@ -2661,6 +2800,13 @@ Begin
  DelFile(F);
 End;
 
+Const
+ {$IFDEF WINDOWS}
+ NullDev='nul';
+ {$ELSE}
+ NullDev='/dev/null';
+ {$ENDIF}
+
 Var
  GitRC:LongInt;
 
@@ -2669,7 +2815,7 @@ Function GitOut(Const Args:AnsiString):AnsiString;
 Var
  O:AnsiString;
 Begin
- GitRC:=RunCapture('git '+Args+IfThen_(False,'',''),O,False);
+ GitRC:=RunCapture('git '+Args+' 2>'+NullDev,O,False);
  While(O<>'')and(O[Length(O)]in[#10,#13])do Delete(O,Length(O),1);
  GitOut:=O;
 End;
@@ -2786,7 +2932,9 @@ Begin
   Ind:=0;
   While(Ind<Length(Ln))and(Ln[Ind+1]=' ')do Inc(Ind);
   Ln:=Copy(Ln,Ind+1,Length(Ln));
-  P:=Pos(':',Ln);
+  P:=0;
+  For J:=1 to Length(Ln)do
+   If(Ln[J]=':')and((J=Length(Ln))or(Ln[J+1]=' '))Then Begin P:=J;Break;End;
   If P=0 Then Continue;
   { les cles entre guillemets peuvent contenir ':' }
   If(Ln[1]='''')or(Ln[1]='"')Then Begin
@@ -3877,7 +4025,7 @@ End;
 { Spec : "nomGh=chemin.rest:genre;..." ; genres :
    s chaine, n nombre, b booleen, S chaine en majuscules, N chaine ou null, u utilisateur,
    U utilisateurs, L etiquettes, m jalon, R copie brute, c nombre d'elements, z JSON litteral,
-   C ferme (state=closed), X motif de fermeture, Z compteur {totalCount} }
+   C ferme (state=closed), X motif de fermeture, Z compteur totalCount }
 Function ShapeField(Node:LongInt;Const Spec,F:AnsiString;Hook:TFieldHook;Var Out_:AnsiString):Boolean;
 Var
  L:TSList;
@@ -8161,6 +8309,12 @@ Begin
  Else WriteLn(J);
 End;
 
+Procedure NoResults(Const Msg:AnsiString);
+Begin
+ If ErrTTY Then WriteLn(StdErr,Msg);
+ Halt(0);
+End;
+
 Function InteractiveOk:Boolean;
 Begin
  InteractiveOk:=InTTY and OutTTY and(CfgGet('prompt','')<>'disabled')and(GetEnv('GH_PROMPT_DISABLED')='');
@@ -8601,14 +8755,21 @@ Var
  I:LongInt;
  H,Tok,Src,User,Scopes:AnsiString;
  Valid,Any_,Failed:Boolean;
+ Jl:TSList;
+ O:TSList;
 Begin
  CmdBegin('auth status','');
  Opt('active','a','','Display the active account only@@Affiche seulement le compte actif');
  Opt('hostname','h','string','Check only a specific hostname''s auth status@@V'+#130+'rifie seulement l''h'+#147+'te indiqu'+#130+'');
  Opt('show-token','t','','Display the auth token@@Affiche le jeton d''authentification');
+ Opt('json','','fields','Output JSON with the specified fields@@Produit du JSON avec les champs indiqu'+#130+'s');
+ Opt('jq','','expression','Filter JSON output using a jq expression@@Filtre la sortie JSON avec une expression jq');
+ Opt('template','','string','Format JSON output using a Go template; see "gh help formatting"@@Formate la sortie JSON avec un mod'+#138+'le Go');
+ CmdJson('hosts');
  CmdLong('Verifies and displays information about your authentication state.@@V'+#130+'rifie et affiche l'''+#130+'tat de votre authentification.');
  ParseArgs(ArgStart);
  NeedArgs(0,0);
+ JsonSetup('hosts');
  ListHosts(Hosts);
  If OptHas('hostname')Then Begin
   If SIndex(Hosts,OptGet('hostname'))<0 Then Begin
@@ -8621,12 +8782,27 @@ Begin
   WriteLn(StdErr,'You are not logged into any GitHub hosts. To log in, run: gh auth login');
   Halt(1);
  End;
+
  Failed:=False;
+ SClear(Jl);
  For I:=0 to Hosts.N-1 do Begin
   H:=Hosts.A[I];
   Tok:=HostToken(H,Src);
-  WriteLn(GitHostName(H));
   User:=CheckToken(H,Tok,Scopes,Valid);
+  If UseJson Then Begin
+   SClear(O);
+   FS(O,'state',IfThen_(Valid,'success','error'));
+   FB(O,'active',True);
+   FS(O,'host',GitHostName(H));
+   FS(O,'login',IfThen_(Valid,User,YGet(HostsY,H+'|user')));
+   FS(O,'tokenSource',BaseName(Src));
+   FS(O,'scopes',ReplaceAll(Scopes,' ',''));
+   FS(O,'gitProtocol',CfgGet('git_protocol',H));
+   SAdd(Jl,JQ(GitHostName(H))+':['+ObjOf(O)+']');
+   If not Valid Then Failed:=True;
+   Continue;
+  End;
+  WriteLn(GitHostName(H));
   If Valid Then Begin
    WriteLn('  '#226#156#147' Logged in to ',GitHostName(H),' account ',User,' (',BaseName(Src),')');
    WriteLn('  - Active account: true');
@@ -8647,6 +8823,7 @@ Begin
    WriteLn('  - To forget about this account, run: gh auth logout -h ',GitHostName(H));
   End;
  End;
+ If UseJson Then EmitJson('{"hosts":{'+JoinList(Jl,',')+'}}');
  If Failed Then Halt(1);
 End;
 
@@ -8698,7 +8875,6 @@ Var
 Begin
  CmdBegin('auth token','');
  Opt('hostname','h','string','The hostname of the GitHub instance authenticated with@@L''h'+#147+'te de l''instance GitHub');
- Opt('secure-storage','','','Search only secure credential store for authentication token@@Cherche seulement dans le trousseau s'+#130+'curis'+#130+'');
  Opt('user','u','string','The account to output the token for@@Le compte dont afficher le jeton');
  ParseArgs(ArgStart);
  NeedArgs(0,0);
@@ -8911,6 +9087,7 @@ Var
  Host:AnsiString;
 Begin
  CmdBegin('config list','');
+ CmdAlias('ls');
  Opt('host','h','string','Get per-host configuration@@Lit la configuration d''un h'+#147+'te');
  ParseArgs(ArgStart);
  NeedArgs(0,0);
@@ -8986,6 +9163,7 @@ Var
  I:LongInt;
 Begin
  CmdBegin('alias list','');
+ CmdAlias('ls');
  ParseArgs(ArgStart);
  NeedArgs(0,0);
  YSub(CfgY,'aliases|',N);
@@ -9033,7 +9211,7 @@ Var
  I,Cnt:LongInt;
  Nm:AnsiString;
 Begin
- CmdBegin('alias imports','[<filename> | -]');
+ CmdBegin('alias import','[<filename> | -]');
  Opt('clobber','','','Overwrite existing aliases of the same name@@Remplace un alias existant de m'+#136+'me nom');
  ParseArgs(ArgStart);
  NeedArgs(1,1);
@@ -9115,7 +9293,7 @@ Begin
  PutRec(Obj,0);
 End;
 
-{ remplace {owner}, {repo} et {branch} }
+{ remplace les marques owner, repo et branch entre accolades }
 Function ExpandPlaceholders(Const S:AnsiString):AnsiString;
 Var
  R:AnsiString;
@@ -9413,8 +9591,10 @@ Var
  N,P:LongInt;
 Begin
  CmdBegin('browse','[<number> | <path> | <commit-sha>]');
+ Opt('actions','a','','Open repository actions@@Ouvre les actions du d'+#130+'p'+#147+'t');
+ Opt('blame','','','Open blame view for a file@@Ouvre la vue d''annotation (blame) d''un fichier');
  Opt('branch','b','string','Select another branch by passing in the branch name@@S'+#130+'lectionne une autre branche');
- Opt('commit','c','','Open the last commit@@Ouvre le dernier commit');
+ Opt('commit','c','string[="last"]','Select another commit by passing in the commit SHA, default is the last commit@@S'+#130+'lectionne un autre commit par son SHA (d'+#130+'faut : le dernier commit)');
  Opt('no-browser','n','','Print destination URL instead of opening the browser@@Affiche l''URL de destination au lieu d''ouvrir le navigateur');
  Opt('projects','p','','Open repository projects@@Ouvre les projets du d'+#130+'p'+#147+'t');
  OptRepo;
@@ -9432,13 +9612,15 @@ Begin
  Url:=RepoWebUrl;
  Arg:=Pos1(0);
  Br:=OptGet('branch');
- If OptHas('projects')Then Url:=Url+'/projects'
+ If OptHas('actions')Then Url:=Url+'/actions'
+ Else If OptHas('projects')Then Url:=Url+'/projects'
  Else If OptHas('wiki')Then Url:=Url+'/wiki'
  Else If OptHas('settings')Then Url:=Url+'/settings'
  Else If OptHas('releases')Then Url:=Url+'/releases'
  Else If OptHas('commit')or((Arg<>'')and(Length(Arg)>=7)and(Length(Arg)<=40)and(ToInt(Arg,-1)<0)and
    (Pos('.',Arg)=0)and(Pos('/',Arg)=0)and(Pos(':',Arg)=0)and IsHex_(Arg))Then Begin
-  If Arg='' Then Arg:=GitOut('rev-parse HEAD');
+  If OptHas('commit')and(OptGet('commit')<>'last')Then Arg:=OptGet('commit');
+  If(Arg='')or(Arg='last')Then Arg:=GitOut('rev-parse HEAD');
   Url:=Url+'/commit/'+Arg;
  End
  Else If Arg<>'' Then Begin
@@ -9449,8 +9631,10 @@ Begin
    Path:=Arg;
    P:=Pos(':',Path);
    If P>0 Then Begin
+    If OptHas('blame')Then Url:=Url+'/blame/'+IfThen_(Br<>'',Br,'HEAD')+'/'+UrlEnc(Copy(Path,1,P-1),True)+'#L'+Copy(Path,P+1,Length(Path)) Else
     Url:=Url+'/tree/'+IfThen_(Br<>'',Br,'HEAD')+'/'+UrlEnc(Copy(Path,1,P-1),True)+'#L'+Copy(Path,P+1,Length(Path));
    End
+   Else If OptHas('blame')Then Url:=Url+'/blame/'+IfThen_(Br<>'',Br,'HEAD')+'/'+UrlEnc(Path,True)
    Else Url:=Url+'/tree/'+IfThen_(Br<>'',Br,'HEAD')+'/'+UrlEnc(Path,True);
   End;
  End
@@ -9870,8 +10054,7 @@ Begin
  End;
  If UseJson Then Begin EmitItems(Keep,RepoSpec,Hook);Exit;End;
  If Keep.N=0 Then Begin
-  WriteLn(StdErr,'No results match your search');
-  Halt(1);
+  NoResults('No results match your search');
  End;
  ShowingLine(Keep.N,Keep.N,'repositories','@'+Owner);
  TblBegin('');
@@ -9946,6 +10129,7 @@ Var
  Opts:TSList;
 Begin
  CmdBegin('repo create','[<name>]');
+ CmdAlias('new');
  Opt('add-readme','','','Add a README file to the new repository@@Ajoute un fichier README au nouveau d'+#130+'p'+#147+'t');
  Opt('clone','c','','Clone the new repository to the current directory@@Clone le nouveau d'+#130+'p'+#147+'t dans le r'+#130+'pertoire courant');
  Opt('description','d','string','Description of the repository@@Description du d'+#130+'p'+#147+'t');
@@ -10046,6 +10230,7 @@ Var
  Git:AnsiString;
 Begin
  CmdBegin('repo clone','<repository> [<directory>] [-- <gitflags>...]');
+ Opt('no-upstream','','','Do not add an upstream remote when cloning a fork@@N''ajoute pas de remote amont lors du clonage d''un fork');
  Opt('upstream-remote-name','u','string','Upstream remote name when cloning a fork@@Nom du remote amont lors du clonage d''un fork');
  CmdLong('Clone a GitHub repository locally.@@Clone un d'+#130+'p'+#147+'t GitHub localement.');
  CmdExample('$ gh repo clone cli/cli');
@@ -10066,7 +10251,7 @@ Begin
  J:=GetRepoNode;
  Git:='clone '+Q(Url)+IfThen_(Dir<>'',' '+Q(Dir),'')+Extra;
  If GitFg(Git)<>0 Then Halt(GitRC);
- If JB(J,'fork')Then Begin
+ If JB(J,'fork')and not OptHas('no-upstream')Then Begin
   P:=JGet(J,'parent');
   If P>=0 Then Begin
    Up:=OptGet('upstream-remote-name');If Up='' Then Up:='upstream';
@@ -10131,7 +10316,8 @@ Var
  I,K:LongInt;
  Cur:LongInt;
  Sec:TSList;
- V:AnsiString;
+ V,SecRepo:AnsiString;
+ Sec2:LongInt;
  Procedure BoolOpt(Const Name,Key:AnsiString);
  Begin
   If OptHas(Name)Then Begin
@@ -10148,16 +10334,20 @@ Begin
  Opt('default-branch','','name','Set the default branch name for the repository@@D'+#130+'finit la branche par d'+#130+'faut');
  Opt('delete-branch-on-merge','','','Delete head branch when pull requests are merged@@Supprime la branche source apr'+#138+'s fusion');
  Opt('description','d','string','Description of the repository@@Description du d'+#130+'p'+#147+'t');
+ Opt('enable-advanced-security','','','Enable advanced security in the repository@@Active la s'+#130+'curit'+#130+' avanc'+#130+'e du d'+#130+'p'+#147+'t');
  Opt('enable-auto-merge','','','Enable auto-merge functionality@@Active la fusion automatique');
  Opt('enable-discussions','','','Enable discussions in the repository@@Active les discussions');
  Opt('enable-issues','','','Enable issues in the repository@@Active les tickets');
  Opt('enable-merge-commit','','','Enable merging pull requests via merge commit@@Active la fusion par commit de fusion');
  Opt('enable-projects','','','Enable projects in the repository@@Active les projets');
  Opt('enable-rebase-merge','','','Enable merging pull requests via rebase@@Active la fusion par rebase');
+ Opt('enable-secret-scanning','','','Enable secret scanning in the repository@@Active l''analyse des secrets du d'+#130+'p'+#147+'t');
+ Opt('enable-secret-scanning-push-protection','','','Enable secret scanning push protection in the repository. Secret scanning must be enabled first@@Active la protection des envois par l''analyse des secrets');
  Opt('enable-squash-merge','','','Enable merging pull requests via squashed commit@@Active la fusion par '+#130+'crasement (squash)');
  Opt('enable-wiki','','','Enable wiki in the repository@@Active le wiki');
  Opt('homepage','h','URL','Repository home page URL@@URL de la page d''accueil du d'+#130+'p'+#147+'t');
  Opt('remove-topic','','*strings','Remove repository topic@@Retire un sujet du d'+#130+'p'+#147+'t');
+ Opt('squash-merge-commit-message','','string','The default value for a squash merge commit message: {default|pr-title|pr-title-commits|pr-title-description}@@Message par d'+#130+'faut des commits de fusion par '+#130+'crasement');
  Opt('template','','','Make the repository available as a template repository@@Rend le d'+#130+'p'+#147+'t disponible comme mod'+#138+'le');
  Opt('visibility','','string','Change the visibility of the repository to {public,private,internal}@@Change la visibilit'+#130+' du d'+#130+'p'+#147+'t : {public,private,internal}');
  CmdLong('Edit repository settings.@@Modifie les param'+#138+'tres d''un d'+#130+'p'+#147+'t.');
@@ -10182,6 +10372,22 @@ Begin
  BoolOpt('enable-auto-merge','allow_auto_merge');BoolOpt('delete-branch-on-merge','delete_branch_on_merge');
  BoolOpt('allow-update-branch','allow_update_branch');BoolOpt('allow-forking','allow_forking');
  BoolOpt('template','is_template');
+ If OptHas('squash-merge-commit-message')Then Begin
+  V:=OptGet('squash-merge-commit-message');
+  If V='default' Then Begin FS(F,'squash_merge_commit_title','COMMIT_OR_PR_TITLE');FS(F,'squash_merge_commit_message','COMMIT_MESSAGES');End
+  Else If V='pr-title' Then Begin FS(F,'squash_merge_commit_title','PR_TITLE');FS(F,'squash_merge_commit_message','BLANK');End
+  Else If V='pr-title-commits' Then Begin FS(F,'squash_merge_commit_title','PR_TITLE');FS(F,'squash_merge_commit_message','COMMIT_MESSAGES');End
+  Else If V='pr-title-description' Then Begin FS(F,'squash_merge_commit_title','PR_TITLE');FS(F,'squash_merge_commit_message','PR_BODY');End;
+ End;
+ If OptHas('enable-advanced-security')or OptHas('enable-secret-scanning')or OptHas('enable-secret-scanning-push-protection')Then Begin
+  SecRepo:='{"security_and_analysis":{';
+  Sec2:=0;
+  If OptHas('enable-advanced-security')Then Begin SecRepo:=SecRepo+'"advanced_security":{"status":"enabled"}';Inc(Sec2);End;
+  If OptHas('enable-secret-scanning')Then Begin If Sec2>0 Then SecRepo:=SecRepo+',';SecRepo:=SecRepo+'"secret_scanning":{"status":"enabled"}';Inc(Sec2);End;
+  If OptHas('enable-secret-scanning-push-protection')Then Begin If Sec2>0 Then SecRepo:=SecRepo+',';SecRepo:=SecRepo+'"secret_scanning_push_protection":{"status":"enabled"}';End;
+  SecRepo:=SecRepo+'}}';
+  FR(F,'security_and_analysis',Copy(SecRepo,Pos(':',SecRepo)+1,Length(SecRepo)-Pos(':',SecRepo)-1));
+ End;
  OptCsv('add-topic',Add);OptCsv('remove-topic',Rem);
  If(F.N=0)and(Add.N=0)and(Rem.N=0)Then Die2('specify properties to edit',1);
  If F.N>0 Then ApiJ('PATCH',RepoApi(''),ObjOf(F));
@@ -10382,7 +10588,7 @@ Begin
   Spec:='id=id:n;key=key:s;title=title:s;createdAt=created_at:s;readOnly=read_only:b';
   EmitItems(L,Spec,Nil);Exit;
  End;
- If L.N=0 Then Begin WriteLn(StdErr,'No deploy keys found in ',RepoFull);Halt(1);End;
+ If L.N=0 Then NoResults('No deploy keys found in '+RepoFull);
  TblBegin('ID'#9'TITLE'#9'TYPE'#9'KEY'#9'CREATED AT');
  For I:=0 to L.N-1 do
   TblRow(IStr(JI(L.A[I],'id'))+#9+JS(L.A[I],'title')+#9+IfThen_(JB(L.A[I],'read_only'),'read-only','read-write')+#9+
@@ -10529,6 +10735,7 @@ Var
  J:LongInt;
 Begin
  CmdBegin('repo autolink create','<keyPrefix> <urlTemplate>');
+ CmdAlias('new');
  OptRepo;
  Opt('numeric','n','','Mark autolink as numeric@@Marque l''autolink comme num'+#130+'rique');
  ParseArgs(ArgStart);
@@ -10567,7 +10774,8 @@ Procedure CmdAutolinkDelete;
 Begin
  CmdBegin('repo autolink delete','<id>');
  OptRepo;
- Opt('yes','y','','Confirm deletion without prompting@@Confirme la suppression sans demander');
+
+ Opt('yes','','','Confirm deletion without prompting@@Confirme la suppression sans demander');
  ParseArgs(ArgStart);
  NeedArgs(1,1);
  NeedRepo;
@@ -10592,7 +10800,7 @@ Begin
  InitHostOpt;
  Lim:=OptInt('limit',30);
  ApiPagedQ('/user/orgs',Lim,'',L);
- If L.N=0 Then Begin WriteLn(StdErr,'You are not a member of any organizations');Halt(1);End;
+ If L.N=0 Then NoResults('You are not a member of any organizations');
  ShowingLine(L.N,L.N,'organizations','@'+CurrentUser);
  For I:=0 to L.N-1 do WriteLn(JS(L.A[I],'login'));
 End;
@@ -10602,7 +10810,7 @@ End;
 
 Const
  IssueFields='assignees,author,body,closed,closedAt,comments,createdAt,id,isPinned,labels,milestone,number,'+
-  'projectCards,projectItems,reactionGroups,state,stateReason,title,updatedAt,url';
+  'projectCards,projectItems,reactionGroups,state,stateReason,title,updatedAt,url,closedByPullRequestsReferences';
  IssueSpec='assignees=assignees:U;author=user:u;body=body:s;closed=state:C;closedAt=closed_at:N;'+
   'createdAt=created_at:s;id=node_id:s;labels=labels:L;milestone=milestone:m;number=number:n;state=state:S;'+
   'stateReason=state_reason:X;title=title:s;updatedAt=updated_at:s;url=html_url:s';
@@ -10641,7 +10849,7 @@ Begin
  IssueHook:=True;
  If F='comments' Then Out_:=CommentsJson(RepoApi('/issues/'+IStr(JI(Node,'number'))+'/comments'))
  Else If F='isPinned' Then Out_:='false'
- Else If(F='projectCards')or(F='projectItems')or(F='reactionGroups')Then Out_:='[]'
+ Else If(F='projectCards')or(F='projectItems')or(F='reactionGroups')or(F='closedByPullRequestsReferences')Then Out_:='[]'
  Else IssueHook:=False;
 End;
 
@@ -10684,12 +10892,6 @@ Begin
  For I:=0 to L.N-1 do If JS(L.A[I],'title')=S Then Begin MilestoneNumber:=JI(L.A[I],'number');Exit;End;
  Die('no milestone found with title "'+S+'"');
  MilestoneNumber:=0;
-End;
-
-Procedure NoResults(Const Msg:AnsiString);
-Begin
- If ErrTTY Then WriteLn(StdErr,Msg);
- Halt(0);
 End;
 
 Procedure PrintIssueRow(N:LongInt;Const Label_:AnsiString);
@@ -10856,6 +11058,7 @@ Begin
  Opt('label','l','*name','Add labels by name@@Ajoute des '+#130+'tiquettes par nom');
  Opt('milestone','m','name','Add the issue to a milestone by name@@Ajoute le ticket '+#133+' un jalon par nom');
  Opt('project','p','*title','Add the issue to projects by title@@Ajoute le ticket '+#133+' des projets par titre');
+ Opt('recover','','string','Recover input from a failed run of create@@R'+#130+'cup'+#138+'re la saisie d''une ex'+#130+'cution '+#130+'chou'+#130+'e');
  OptRepo;
  Opt('template','T','name','Template name to use as starting body text@@Nom du mod'+#138+'le utilis'+#130+' comme corps initial');
  Opt('title','t','string','Supply a title. Will prompt for one otherwise.@@Fournit un titre. Sinon, il sera demand'+#130+'.');
@@ -10964,6 +11167,7 @@ Var
 Begin
  If Close Then CmdBegin('issue close','{<number> | <url>}') Else CmdBegin('issue reopen','{<number> | <url>}');
  Opt('comment','c','string','Leave a closing comment@@Laisse un commentaire de fermeture');
+ If Close Then Opt('duplicate-of','','string','Mark as duplicate of another issue by number or URL@@Marque comme doublon d''un autre ticket (num'+#130+'ro ou URL)');
  If Close Then Opt('reason','r','string','Reason for closing: {completed|not planned}@@Raison de la fermeture : {completed|not planned}');
  OptRepo;
  ParseArgs(ArgStart);
@@ -10980,7 +11184,9 @@ Begin
  If Close Then Begin
   FS(F,'state','closed');
   Reason:=LoStr(OptGet('reason'));
-  If Reason='not planned' Then FS(F,'state_reason','not_planned')
+  If OptHas('duplicate-of')Then Begin Reason:='duplicate';AddComment(N,'Duplicate of #'+IStr(ParseNumArg(OptGet('duplicate-of'),'issue')));End;
+  If Reason='duplicate' Then FS(F,'state_reason','duplicate')
+  Else If Reason='not planned' Then FS(F,'state_reason','not_planned')
   Else If(Reason='completed')or(Reason='')Then FS(F,'state_reason','completed')
   Else Die2('invalid reason "'+Reason+'": valid values are {completed|not planned}',1);
  End
@@ -11066,15 +11272,15 @@ Var
  D:LongInt;
 Begin
  CmdBegin('issue delete','{<number> | <url>}');
- Opt('confirm','','','Confirm deletion without prompting@@Confirme la suppression sans demander');
+ Opt('yes','','','Confirm deletion without prompting@@Confirme la suppression sans demander');
  OptRepo;
  ParseArgs(ArgStart);
  NeedArgs(1,1);
  N:=ParseNumArg(Pos1(0),'issue');
  NeedRepo;
  J:=ApiJ('GET',RepoApi('/issues/'+IStr(N)),'');
- If not OptHas('confirm')Then Begin
-  If not InteractiveOk Then Die2('--confirm required when not running interactively',1);
+ If not OptHas('yes')Then Begin
+  If not InteractiveOk Then Die2('--yes required when not running interactively',1);
   If AskLine('You''re going to delete issue #'+IStr(N)+'. This action cannot be reversed. To confirm, type the issue number:','')<>IStr(N)Then Begin
    WriteLn(StdErr,'Cancelled.');Halt(2);
   End;
@@ -11176,18 +11382,35 @@ Var
  I:LongInt;
  Q_:AnsiString;
  Secs:Integer;
- Titles,Queries:TSList;
+ Titles,Queries,Tmp:TSList;
+ Out_,Sec:AnsiString;
+Const
+ SecKeys:Array[0..2]of String[10]=('assigned','mentioned','authored');
 Begin
  CmdBegin('issue status','');
  OptRepo;OptJsonAll;
- CmdJson('assignees,author,body,closed,closedAt,comments,createdAt,id,labels,milestone,number,state,title,updatedAt,url');
+ CmdJson(IssueFields);
  ParseArgs(ArgStart);
  NeedArgs(0,0);
+ JsonSetup(IssueFields);
  NeedRepo;
  SClear(Titles);SClear(Queries);
  SAdd(Titles,'Issues assigned to you');SAdd(Queries,'assignee:@me');
  SAdd(Titles,'Issues mentioning you');SAdd(Queries,'mentions:@me');
  SAdd(Titles,'Issues opened by you');SAdd(Queries,'author:@me');
+ If UseJson Then Begin
+  Out_:='{';
+  For Secs:=0 to 2 do Begin
+   ApiPaged('/search/issues?q='+UrlEnc('repo:'+RepoFull+' is:issue is:open '+Queries.A[Secs],False),10,'items',L,T);
+   Sec:=SecKeys[Secs];
+   If Secs>0 Then Out_:=Out_+',';
+   SClear(Tmp);
+   For I:=0 to L.N-1 do SAdd(Tmp,ShapeObj(L.A[I],IssueSpec,@IssueHook));
+   Out_:=Out_+'"'+Sec+'":['+JoinList(Tmp,',')+']';
+  End;
+  EmitJson(Out_+'}');
+  Exit;
+ End;
  WriteLn;
  WriteLn('Relevant issues in ',RepoFull);
  WriteLn;
@@ -11265,6 +11488,7 @@ Var
  Q_:AnsiString;
 Begin
  CmdBegin('label list','');
+ CmdAlias('ls');
  OptLimitN('Maximum number of labels to fetch',30);
  Opt('order','','string','Order of labels returned: {asc|desc} (default "asc")@@Ordre des '+#130+'tiquettes : {asc|desc} (d'+#130+'faut "asc")');
  OptRepo;
@@ -12149,7 +12373,7 @@ Var
  I:LongInt;
  Rem:AnsiString;
 Begin
- CmdBegin('pr checkout','{<number> | <url> | <branch>}');
+ CmdBegin('pr checkout','[<number> | <url> | <branch>]');
  CmdAlias('co');
  Opt('branch','b','string','Local branch name to use (default [the name of the head branch])@@Nom de la branche locale (d'+#130+'faut : nom de la branche source)');
  Opt('detach','','','Checkout PR with a detached HEAD@@R'+#130+'cup'+#138+'re la pull request avec un HEAD d'+#130+'tach'+#130+'');
@@ -12211,6 +12435,34 @@ Begin
  If OptHas('recurse-submodules')Then GitFg('submodule update --init --recursive');
 End;
 
+{ affiche la difference en retirant les fichiers exclus (motifs glob) }
+Procedure FilterDiff(Const Diff:AnsiString);
+Var
+ L,Pats:TSList;
+ I,J,P:LongInt;
+ Skip,Hit:Boolean;
+ Ln,Fn:AnsiString;
+ B:TBuf;
+Begin
+ OptCsv('exclude',Pats);
+ SplitStr(Diff,#10,L);
+ BufClear(B);
+ Skip:=False;
+ For I:=0 to L.N-1 do Begin
+  Ln:=L.A[I];
+  If StartsWith(Ln,'diff --git ')Then Begin
+   P:=Pos(' b/',Ln);
+   Fn:=Copy(Ln,P+3,Length(Ln));
+   Skip:=False;
+   For J:=0 to Pats.N-1 do If Glob(Pats.A[J],Fn)or Glob(Pats.A[J],BaseName(Fn))Then Skip:=True;
+  End;
+  If not Skip Then Begin
+   If(I<L.N-1)or(Ln<>'')Then BufAdd(B,Ln+#10);
+  End;
+ End;
+ Write(BufStr(B));
+End;
+
 Procedure CmdPrDiff;
 Var
  Pr:LongInt;
@@ -12220,6 +12472,7 @@ Var
 Begin
  CmdBegin('pr diff','[<number> | <url> | <branch>]');
  Opt('color','','string','Use color in diff output: {always|never|auto} (default "auto")@@Utilise la couleur dans la sortie : {always|never|auto}');
+ Opt('exclude','e','patterns','Exclude files matching glob patterns from the diff@@Exclut de la diff'+#130+'rence les fichiers correspondant aux motifs');
  Opt('name-only','','','Display only names of changed files@@Affiche seulement les noms des fichiers modifi'+#130+'s');
  Opt('patch','','','Display diff in patch format@@Affiche la diff'+#130+'rence au format patch');
  OptRepo;
@@ -12240,7 +12493,7 @@ Begin
  Else R.Headers:='Accept: application/vnd.github.diff'#13#10;
  HttpDo(R);
  If not ApiOk(R)Then Die(ErrText(R));
- Write(R.RespBody);
+ If OptHas('exclude')Then FilterDiff(R.RespBody) Else Write(R.RespBody);
 End;
 
 Procedure CmdPrReview;
@@ -12663,8 +12916,9 @@ Var
  Br:AnsiString;
  R:THttpReq;
  Cur:TIList;
- Titles,Queries:TSList;
+ Titles,Queries,Tmp:TSList;
  Secs:Integer;
+ Out_:AnsiString;
 Begin
  CmdBegin('pr status','');
  Opt('conflict-status','c','','Display the merge conflict status of each pull request@@Affiche l'''+#130+'tat des conflits de chaque pull request');
@@ -12672,7 +12926,25 @@ Begin
  CmdJson(PrFields);
  ParseArgs(ArgStart);
  NeedArgs(0,0);
+ JsonSetup(PrFields);
  NeedRepo;
+ If UseJson Then Begin
+  Br:=CurrentBranch;
+  Cur.N:=0;
+  If Br<>'' Then ApiPagedQ(RepoApi('/pulls?state=open&head='+UrlEnc(RepoOwner+':'+Br,False)),1,'',Cur);
+  Out_:='{"createdBy":';
+  ApiPaged('/search/issues?q='+UrlEnc('repo:'+RepoFull+' is:pr is:open author:@me',False),10,'items',L,T);
+  SClear(Tmp);
+  For I:=0 to L.N-1 do SAdd(Tmp,ShapeObj(L.A[I],PrSpec,@PrHook));
+  Out_:=Out_+'['+JoinList(Tmp,',')+'],"currentBranch":';
+  If Cur.N>0 Then Out_:=Out_+ShapeObj(Cur.A[0],PrSpec,@PrHook) Else Out_:=Out_+'null';
+  ApiPaged('/search/issues?q='+UrlEnc('repo:'+RepoFull+' is:pr is:open review-requested:@me',False),10,'items',L,T);
+  SClear(Tmp);
+  For I:=0 to L.N-1 do SAdd(Tmp,ShapeObj(L.A[I],PrSpec,@PrHook));
+  Out_:=Out_+',"needsReview":['+JoinList(Tmp,',')+']}';
+  EmitJson(Out_);
+  Exit;
+ End;
  WriteLn;
  WriteLn('Relevant pull requests in ',RepoFull);
  WriteLn;
@@ -12796,6 +13068,8 @@ Const
  WorkflowSpec='id=id:n;name=name:s;path=path:s;state=state:s';
  RunFields='attempt,conclusion,createdAt,databaseId,displayTitle,event,headBranch,headSha,jobs,name,number,startedAt,'+
   'status,updatedAt,url,workflowDatabaseId,workflowName';
+ RunListFields='attempt,conclusion,createdAt,databaseId,displayTitle,event,headBranch,headSha,name,number,startedAt,'+
+  'status,updatedAt,url,workflowDatabaseId,workflowName';
  RunSpec='attempt=run_attempt:n;conclusion=conclusion:s;createdAt=created_at:s;databaseId=id:n;'+
   'displayTitle=display_title:s;event=event:s;headBranch=head_branch:s;headSha=head_sha:s;name=name:s;'+
   'number=run_number:n;startedAt=run_started_at:s;status=status:s;updatedAt=updated_at:s;url=html_url:s;'+
@@ -12890,7 +13164,7 @@ Begin
  For I:=0 to L.N-1 do
   If(OptHas('all')or(JS(L.A[I],'state')='active'))and(Keep.N<Lim)Then IAdd(Keep,L.A[I]);
  If UseJson Then Begin EmitItems(Keep,WorkflowSpec,Nil);Exit;End;
- If Keep.N=0 Then Begin WriteLn(StdErr,'No workflows found');Halt(1);End;
+ If Keep.N=0 Then NoResults('No workflows found');
  TblBegin('');
  For I:=0 to Keep.N-1 do Begin
   St:=JS(Keep.A[I],'state');
@@ -13047,7 +13321,8 @@ Var
  D:Int64;
  S:AnsiString;
 Begin
- D:=IsoToEpoch(JS(Node,'updated_at'))-IsoToEpoch(JS(Node,'run_started_at'));
+ If JGet(Node,'completed_at')>=0 Then D:=IsoToEpoch(JS(Node,'completed_at'))-IsoToEpoch(JS(Node,'started_at'))
+ Else D:=IsoToEpoch(JS(Node,'updated_at'))-IsoToEpoch(JS(Node,'run_started_at'));
  If D<0 Then D:=0;
  S:='';
  If D>=3600 Then S:=IStr(D div 3600)+'h';
@@ -13077,10 +13352,10 @@ Begin
  Opt('user','u','string','Filter runs by user who triggered the run@@Filtre les ex'+#130+'cutions par utilisateur');
  Opt('workflow','w','string','Filter runs by workflow@@Filtre les ex'+#130+'cutions par workflow');
  OptJsonAll;
- CmdJson(RunFields);
+ CmdJson(RunListFields);
  ParseArgs(ArgStart);
  NeedArgs(0,0);
- JsonSetup(RunFields);
+ JsonSetup(RunListFields);
  NeedRepo;
  Lim:=OptInt('limit',20);
  If OptHas('workflow')Then Begin
@@ -13282,12 +13557,13 @@ Var
  Id:LongInt;
 Begin
  CmdBegin('run cancel','[<run-id>]');
+ Opt('force','','','Force cancel a workflow run@@Force l''annulation d''une ex'+#130+'cution de workflow');
  OptRepo;
  ParseArgs(ArgStart);
  NeedArgs(0,1);
  NeedRepo;
  Id:=RunIdArg('cancel');
- ApiJ('POST',RepoApi('/actions/runs/'+IStr(Id)+'/cancel'),'');
+ ApiJ('POST',RepoApi('/actions/runs/'+IStr(Id)+IfThen_(OptHas('force'),'/force-cancel','/cancel')),'');
  WriteLn(StdErr,#226#156#147' Request to cancel workflow ',Id,' submitted.');
 End;
 
@@ -13419,7 +13695,7 @@ Begin
  If OptHas('ref')Then Path:=Path+'&ref='+UrlEnc(OptGet('ref'),False);
  ApiPaged(Path,Lim,'actions_caches',L,T);
  If UseJson Then Begin EmitItems(L,CacheSpec,Nil);Exit;End;
- If L.N=0 Then Begin WriteLn(StdErr,'No caches found in ',RepoFull);Halt(1);End;
+ If L.N=0 Then NoResults('No caches found in '+RepoFull);
  ShowingLine(L.N,T,'caches',RepoFull);
  If OutTTY Then TblBegin('ID'#9'KEY'#9'SIZE'#9'CREATED'#9'ACCESSED') Else TblBegin('');
  For I:=0 to L.N-1 do
@@ -13436,9 +13712,10 @@ Var
  Sel:AnsiString;
  R:THttpReq;
 Begin
- CmdBegin('cache delete','[<cache-id>| <cache-key> | --all]');
+ CmdBegin('cache delete','[<cache-id> | <cache-key> | --all]');
  Opt('all','a','','Delete all caches@@Supprime tous les caches');
  OptRepo;
+ Opt('ref','r','string','Delete by cache key and ref, formatted as refs/heads/<branch name> or refs/pull/<number>/merge@@Supprime selon la cl'+#130+' et la r'+#130+'f'+#130+'rence du cache'); 
  Opt('succeed-on-no-caches','','','Return exit code 0 if no caches found. Must be used in conjunction with `--all`@@Renvoie 0 si aucun cache n''est trouv'+#130+' (avec --all)');
  ParseArgs(ArgStart);
  NeedRepo;
@@ -13459,7 +13736,7 @@ Begin
   Cnt:=1;
  End
  Else Begin
-  ApiCall(R,'DELETE',RepoApi('/actions/caches?key='+UrlEnc(Sel,False)),'');
+  ApiCall(R,'DELETE',RepoApi('/actions/caches?key='+UrlEnc(Sel,False)+IfThen_(OptHas('ref'),'&ref='+UrlEnc(OptGet('ref'),False),'')),'');
   If not ApiOk(R)Then Die(ErrText(R));
   Cnt:=JI(JParse(R.RespBody),'total_count');
   If Cnt=0 Then Die('X No cache with key '+Sel);
@@ -13473,9 +13750,26 @@ End;
 Const
  ReleaseFields='apiUrl,assets,author,body,createdAt,databaseId,id,isDraft,isImmutable,isPrerelease,name,publishedAt,'+
   'tagName,tarballUrl,targetCommitish,uploadUrl,url,zipballUrl';
+ ReleaseListFields='createdAt,isDraft,isImmutable,isLatest,isPrerelease,name,publishedAt,tagName';
  ReleaseSpec='apiUrl=url:s;body=body:s;createdAt=created_at:s;databaseId=id:n;id=node_id:s;isDraft=draft:b;'+
   'isImmutable=immutable:b;isPrerelease=prerelease:b;name=name:s;publishedAt=published_at:N;tagName=tag_name:s;'+
   'tarballUrl=tarball_url:s;targetCommitish=target_commitish:s;uploadUrl=upload_url:s;url=html_url:s;zipballUrl=zipball_url:s';
+
+Var
+ LatestRelId:LongInt;
+
+Function ReleaseIsLatest(Node:LongInt):Boolean;
+Var
+ R:THttpReq;
+ J:LongInt;
+Begin
+ If LatestRelId=0 Then Begin
+  LatestRelId:=-1;
+  ApiCall(R,'GET',RepoApi('/releases/latest'),'');
+  If ApiOk(R)Then Begin J:=JParse(R.RespBody);LatestRelId:=JI(J,'id');End;
+ End;
+ ReleaseIsLatest:=(LatestRelId>0)and(JI(Node,'id')=LatestRelId);
+End;
 
 Function ReleaseHook(Node:LongInt;Const F:AnsiString;Var Out_:AnsiString):Boolean;
 Var
@@ -13501,6 +13795,7 @@ Begin
   End;
   Out_:='['+JoinList(L,',')+']';
  End
+ Else If F='isLatest' Then Out_:=JBool(ReleaseIsLatest(Node))
  Else ReleaseHook:=False;
 End;
 
@@ -13554,10 +13849,10 @@ Begin
  OptLimitN('Maximum number of items to fetch',30);
  Opt('order','O','string','Order of releases returned: {asc|desc} (default "desc")@@Ordre des versions : {asc|desc} (d'+#130+'faut "desc")');
  OptRepo;OptJsonAll;
- CmdJson(ReleaseFields);
+ CmdJson(ReleaseListFields);
  ParseArgs(ArgStart);
  NeedArgs(0,0);
- JsonSetup(ReleaseFields);
+ JsonSetup(ReleaseListFields);
  NeedRepo;
  Lim:=OptInt('limit',30);
  ApiPagedQ(RepoApi('/releases'),0,'',L);
@@ -13571,7 +13866,7 @@ Begin
  If Rev Then For I:=0 to Keep.N div 2-1 do Begin Lat:=Keep.A[I];Keep.A[I]:=Keep.A[Keep.N-1-I];Keep.A[Keep.N-1-I]:=Lat;End;
  If Keep.N>Lim Then Keep.N:=Lim;
  If UseJson Then Begin EmitItems(Keep,ReleaseSpec,@ReleaseHook);Exit;End;
- If Keep.N=0 Then Begin WriteLn(StdErr,'No releases found in ',RepoFull);Halt(1);End;
+ If Keep.N=0 Then NoResults('No releases found in '+RepoFull);
  Lat:=LatestRelease;
  If OutTTY Then TblBegin('TITLE'#9'TYPE'#9'TAG NAME'#9'PUBLISHED') Else TblBegin('');
  For I:=0 to Keep.N-1 do Begin
@@ -13705,9 +14000,10 @@ Var
  R:THttpReq;
  Latest_:AnsiString;
 Begin
- CmdBegin('release create','[<tag>] [<release-notes>]');
+ CmdBegin('release create','[<tag>] [<filename>... | <pattern>...]');
  Opt('discussion-category','','string','Start a discussion in the specified category@@D'+#130+'marre une discussion dans la cat'+#130+'gorie indiqu'+#130+'e');
  Opt('draft','d','','Save the release as a draft instead of publishing it@@Enregistre la version comme brouillon');
+ Opt('fail-on-no-commits','','','Fail if there are no commits since the last release (no impact on the first release)@@'+#144+'choue s''il n''y a aucun commit depuis la derni'+#138+'re version');
  Opt('generate-notes','','','Automatically generate title and notes for the release@@G'+#130+'n'+#138+'re automatiquement le titre et les notes');
  Opt('latest','','','Mark this release as "Latest" (default [automatic based on date and version])@@Marque cette version comme "Latest"');
  Opt('notes','n','string','Release notes@@Notes de version');
@@ -13946,7 +14242,7 @@ Var
  J:LongInt;
  FJ:LongInt;
 Begin
- CmdBegin('gist create','[<filename>... | -]');
+ CmdBegin('gist create','[<filename>... | <pattern>... | -]');
  CmdAlias('new');
  Opt('desc','d','string','A description for this gist@@Une description pour ce gist');
  Opt('filename','f','string','Provide a filename to be used when reading from standard input@@Nom de fichier utilis'+#130+' pour la lecture de l''entr'+#130+'e standard');
@@ -13988,10 +14284,13 @@ Var
  Pub,Sec:Boolean;
  Keep:TIList;
  Desc:AnsiString;
+ Gs,Fc:LongInt;
+ Hit:Boolean;
 Begin
  CmdBegin('gist list','');
  CmdAlias('ls');
  Opt('filter','','expression','Filter gists using a regular expression@@Filtre les gists avec une expression r'+#130+'guli'+#138+'re');
+ Opt('include-content','','','Include gists'' file content when filtering@@Inclut le contenu des fichiers des gists lors du filtrage');
  OptLimitN('Maximum number of gists to fetch',10);
  Opt('public','','','Show only public gists@@Affiche seulement les gists publics');
  Opt('secret','','','Show only secret gists@@Affiche seulement les gists secrets');
@@ -14006,7 +14305,20 @@ Begin
   If OptHas('secret')and JB(L.A[I],'public')Then Continue;
   If OptHas('filter')Then Begin
    If not RxCompile(OptGet('filter'),False,False)Then Die('invalid regular expression');
-   If not RxSearch(JS(L.A[I],'description'),1)Then Continue;
+   If not RxSearch(JS(L.A[I],'description'),1)Then Begin
+    If not OptHas('include-content')Then Continue;
+    Gs:=ApiJ('GET','/gists/'+JS(L.A[I],'id'),'');
+    Hit:=False;
+    Fc:=JGet(Gs,'files');
+    If Fc>=0 Then Begin
+     Fc:=JP[Fc].First;
+     While Fc>=0 do Begin
+      If RxSearch(JS(Fc,'content'),1)Then Hit:=True;
+      Fc:=JP[Fc].Next;
+     End;
+    End;
+    If not Hit Then Continue;
+   End;
   End;
   If Keep.N<Lim Then IAdd(Keep,L.A[I]);
  End;
@@ -14176,7 +14488,7 @@ Begin
  InitHostOpt;
  ApiPagedQ('/user/keys',0,'',L);
  ApiPagedQ('/user/ssh_signing_keys',0,'',S);
- If L.N+S.N=0 Then Begin WriteLn(StdErr,'No SSH keys present in GitHub account.');Halt(1);End;
+ If L.N+S.N=0 Then NoResults('No SSH keys present in GitHub account.');
  If OutTTY Then TblBegin('TITLE'#9'ID'#9'KEY'#9'TYPE'#9'ADDED') Else TblBegin('');
  For I:=0 to L.N-1 do
   TblRow(JS(L.A[I],'title')+#9+IStr(JI(L.A[I],'id'))+#9+Trunc_(JS(L.A[I],'key'),50)+#9+'authentication'+#9+TimeCell(JS(L.A[I],'created_at')));
@@ -14243,7 +14555,7 @@ Begin
  NeedArgs(0,0);
  InitHostOpt;
  ApiPagedQ('/user/gpg_keys',0,'',L);
- If L.N=0 Then Begin WriteLn(StdErr,'No GPG keys present in GitHub account.');Halt(1);End;
+ If L.N=0 Then NoResults('No GPG keys present in GitHub account.');
  If OutTTY Then TblBegin('EMAIL'#9'KEY ID'#9'PUBLIC KEY'#9'ADDED'#9'EXPIRES') Else TblBegin('');
  For I:=0 to L.N-1 do
   TblRow(FirstEmail(L.A[I])+#9+JS(L.A[I],'key_id')+#9+Trunc_(JS(L.A[I],'public_key'),30)+#9+TimeCell(JS(L.A[I],'created_at'))+#9+
@@ -14958,6 +15270,7 @@ Var
  Base:AnsiString;
 Begin
  CmdBegin('secret delete','<secret-name>');
+ CmdAlias('remove');
  ScopeOpts(True);
  ParseArgs(ArgStart);
  NeedArgs(1,1);
@@ -15063,10 +15376,17 @@ Var
 Begin
  CmdBegin('variable get','<variable-name>');
  ScopeOpts(False);
+ OptJsonAll;
+ CmdJson('createdAt,name,numSelectedRepos,selectedReposURL,updatedAt,value,visibility');
  ParseArgs(ArgStart);
  NeedArgs(1,1);
+ JsonSetup('createdAt,name,numSelectedRepos,selectedReposURL,updatedAt,value,visibility');
  Base:=ScopeBase('variables');
  J:=ApiJ('GET',Base+'/'+PathEnc(Pos1(0)),'');
+ If UseJson Then Begin
+  EmitItem(J,'createdAt=created_at:s;name=name:s;numSelectedRepos=selected_repositories_count:n;selectedReposURL=selected_repositories_url:s;updatedAt=updated_at:s;value=value:s;visibility=visibility:s',Nil);
+  Exit;
+ End;
  WriteLn(JS(J,'value'));
 End;
 
@@ -15075,6 +15395,7 @@ Var
  Base:AnsiString;
 Begin
  CmdBegin('variable delete','<variable-name>');
+ CmdAlias('remove');
  ScopeOpts(False);
  ParseArgs(ArgStart);
  NeedArgs(1,1);
@@ -15098,9 +15419,11 @@ Const
   'updatedAt=updated_at:s;url=html_url:s;visibility=visibility:s;watchersCount=watchers_count:n';
  SrIssueFields='assignees,author,authorAssociation,body,closedAt,commentsCount,createdAt,id,isLocked,isPullRequest,'+
   'labels,number,repository,state,title,updatedAt,url';
+ SrPrFields='assignees,author,authorAssociation,body,closedAt,commentsCount,createdAt,id,isDraft,isLocked,isPullRequest,'+
+  'labels,number,repository,state,title,updatedAt,url';
  SrIssueSpec='assignees=assignees:U;author=user:u;authorAssociation=author_association:s;body=body:s;closedAt=closed_at:N;'+
   'commentsCount=comments:n;createdAt=created_at:s;id=node_id:s;isLocked=locked:b;labels=labels:L;number=number:n;'+
-  'state=state:s;title=title:s;updatedAt=updated_at:s;url=html_url:s';
+  'state=state:s;title=title:s;updatedAt=updated_at:s;url=html_url:s;isDraft=draft:b';
  SrCodeFields='path,repository,sha,textMatches,url';
  SrCodeSpec='path=path:s;sha=sha:s;url=html_url:s';
  SrCommitFields='author,commit,committer,id,parents,repository,sha,url';
@@ -15226,7 +15549,7 @@ End;
 Procedure SearchCommon(Const What:AnsiString);
 Begin
  OptLimitN('Maximum number of '+What+' to fetch',30);
- Opt('order','','string','Order of results returned, ignored unless ''--sort'' flag is specified: {asc|desc} (default "desc")@@Ordre des r'+#130+'sultats, ignor'+#130+' sans --sort : {asc|desc} (d'+#130+'faut "desc")');
+ If Pos('code',What)=0 Then Opt('order','','string','Order of results returned, ignored unless ''--sort'' flag is specified: {asc|desc} (default "desc")@@Ordre des r'+#130+'sultats, ignor'+#130+' sans --sort : {asc|desc} (d'+#130+'faut "desc")');
  OptWeb('Open the search query in the web browser@@Ouvre la recherche dans le navigateur');
  OptJsonAll;
 End;
@@ -15284,7 +15607,7 @@ Begin
  Lim:=OptInt('limit',30);
  RunSearch('repositories',Q_,Lim,L,T,SortParams,'');
  If UseJson Then Begin EmitItems(L,SrRepoSpec,@SearchHook);Exit;End;
- If L.N=0 Then Begin WriteLn(StdErr,'No repositories matched your search');Halt(1);End;
+ If L.N=0 Then NoResults('No repositories matched your search');
  ShowingLine(L.N,T,'repositories','');
  TblBegin('');
  For I:=0 to L.N-1 do
@@ -15306,8 +15629,9 @@ Begin
  Opt('app','','string','Filter by GitHub App author@@Filtre par application GitHub');
  Opt('archived','','','Restrict search to archived repositories@@Restreint aux d'+#130+'p'+#147+'ts archiv'+#130+'s');
  Opt('assignee','','string','Filter by assignee@@Filtre par personne assign'+#130+'e');
- Opt('author','A','string','Filter by author@@Filtre par auteur');
+ Opt('author','','string','Filter by author@@Filtre par auteur');
  If IsPr Then Opt('base','B','string','Filter on base branch name@@Filtre par branche de base');
+ If IsPr Then Opt('checks','','string','Filter based on status of the checks: {pending|success|failure}@@Filtre selon l'''+#130+'tat des contr'+#147+'les : {pending|success|failure}');
  Opt('closed','','date','Filter on closed at date@@Filtre selon la date de fermeture');
  Opt('commenter','','string','Filter based on comments by user@@Filtre selon les commentaires d''un utilisateur');
  Opt('comments','','number','Filter on number of comments@@Filtre selon le nombre de commentaires');
@@ -15342,10 +15666,10 @@ Begin
  Opt('updated','','date','Filter on last updated at date@@Filtre selon la date de derni'+#138+'re mise '+#133+' jour');
  Opt('visibility','','string','Filter based on repository visibility: {public|private|internal}@@Filtre selon la visibilit'+#130+' du d'+#130+'p'+#147+'t');
  SearchCommon(IfThen_(IsPr,'pull requests','issues'));
- CmdJson(SrIssueFields);
+ If IsPr Then CmdJson(SrPrFields) Else CmdJson(SrIssueFields);
  ParseArgs(ArgStart);
  NeedArgs(0,-1);
- JsonSetup(SrIssueFields);
+ If IsPr Then JsonSetup(SrPrFields) Else JsonSetup(SrIssueFields);
  InitHostOpt;
  Q_:=JoinList(PosArgs,' ');
  QualAdd(Q_,'is',IfThen_(IsPr,'pr','issue'));
@@ -15354,6 +15678,7 @@ Begin
   Q_:=ReplaceAll(Q_,' is:issue','');Q_:=ReplaceAll(Q_,'is:issue ','');
  End;
  QualAdd(Q_,'author',ResolveMe(OptGet('author')));
+ If IsPr Then QualAdd(Q_,'status',OptGet('checks'));
  If OptHas('app')Then QualAdd(Q_,'author','app/'+OptGet('app'));
  QualAdd(Q_,'assignee',ResolveMe(OptGet('assignee')));
  If IsPr Then Begin QualAdd(Q_,'base',OptGet('base'));QualAdd(Q_,'head',OptGet('head'));End;
@@ -15384,7 +15709,7 @@ Begin
  Lim:=OptInt('limit',30);
  RunSearch('issues',Q_,Lim,L,T,SortParams,'');
  If UseJson Then Begin EmitItems(L,SrIssueSpec,@SearchHook);Exit;End;
- If L.N=0 Then Begin WriteLn(StdErr,'No ',IfThen_(IsPr,'pull requests','issues'),' matched your search');Halt(1);End;
+ If L.N=0 Then NoResults('No '+IfThen_(IsPr,'pull requests','issues')+' matched your search');
  ShowingLine(L.N,T,IfThen_(IsPr,'pull requests','issues'),'');
  TblBegin('');
  For I:=0 to L.N-1 do Begin
@@ -15440,7 +15765,7 @@ Begin
  Lim:=OptInt('limit',30);
  RunSearch('code',Q_,Lim,L,T,'','application/vnd.github.text-match+json');
  If UseJson Then Begin EmitItems(L,SrCodeSpec,@SearchHook);Exit;End;
- If L.N=0 Then Begin WriteLn(StdErr,'No code results matched your search');Halt(1);End;
+ If L.N=0 Then NoResults('No code results matched your search');
  ShowingLine(L.N,T,'code results','');
  For I:=0 to L.N-1 do Begin
   If OutTTY Then WriteLn(JS(L.A[I],'repository.full_name'),':',JS(L.A[I],'path'))
@@ -15506,7 +15831,7 @@ Begin
  Lim:=OptInt('limit',30);
  RunSearch('commits',Q_,Lim,L,T,SortParams,'');
  If UseJson Then Begin EmitItems(L,SrCommitSpec,@SearchHook);Exit;End;
- If L.N=0 Then Begin WriteLn(StdErr,'No commits matched your search');Halt(1);End;
+ If L.N=0 Then NoResults('No commits matched your search');
  ShowingLine(L.N,T,'commits','');
  TblBegin('');
  For I:=0 to L.N-1 do
@@ -15544,7 +15869,7 @@ Begin
  End;
  Lim:=OptInt('limit',30);
  ApiPagedQ(Path,Lim,'',L);
- If L.N=0 Then Begin WriteLn(StdErr,'No rulesets found in ',IfThen_(Org<>'',Org,RepoFull));Halt(1);End;
+ If L.N=0 Then NoResults('No rulesets found in '+IfThen_(Org<>'',Org,RepoFull));
  If OutTTY Then TblBegin('ID'#9'NAME'#9'SOURCE'#9'STATUS'#9'RULES') Else TblBegin('');
  For I:=0 to L.N-1 do
   TblRow(IStr(JI(L.A[I],'id'))+#9+JS(L.A[I],'name')+#9+JS(L.A[I],'source')+' ('+JS(L.A[I],'source_type')+')'+#9+JS(L.A[I],'enforcement')+#9+
@@ -15628,6 +15953,26 @@ End;
 Var
  PjOwner:AnsiString;
 
+Procedure PjFmtOpts;
+Begin
+ Opt('format','','string','Output format: {json}@@Format de sortie : {json}');
+ Opt('jq','q','expression','Filter JSON output using a jq expression@@Filtre la sortie JSON avec une expression jq');
+ Opt('template','t','string','Format JSON output using a Go template; see "gh help formatting"@@Formate la sortie JSON avec un mod'+#138+'le Go; voir "gh help formatting"');
+End;
+
+Function PjJson:Boolean;
+Begin
+ PjJson:=(OptGet('format')='json')or OptHas('jq')or OptHas('template');
+ JqExpr:=OptGet('jq');TmplText:=OptGet('template');
+ If(OptGet('format')<>'')and(OptGet('format')<>'json')Then Die2('invalid format "'+OptGet('format')+'"; must be json',1);
+End;
+
+Procedure PjEmit(Const J:AnsiString);
+Begin
+ JqExpr:=OptGet('jq');TmplText:=OptGet('template');
+ EmitJson(J);
+End;
+
 Procedure PjOwnerOpt;
 Begin
  Opt('owner','','string','Login of the owner. Use "@me" for the current user.@@Identifiant du propri'+#130+'taire. Utilisez "@me" pour l''utilisateur courant.');
@@ -15645,7 +15990,7 @@ Begin
  Else WithLogin:='{"login":'+JQ(PjOwner)+','+Copy(V,2,Length(V));
 End;
 
-{ execute une requete sur le proprietaire : Body est insere dans viewer{...} ou dans le proprietaire }
+{ execute une requete sur le proprietaire : Body est insere dans viewer ou dans le proprietaire }
 Function PjQuery(Const Params,Body,VarsJson:AnsiString):LongInt;
 Var
  D:LongInt;
@@ -15712,15 +16057,14 @@ Var
  Cnt:LongInt;
 Begin
  CmdBegin('project list','');
+ CmdAlias('ls');
  Opt('closed','','','Include closed projects@@Inclut les projets ferm'+#130+'s');
  OptLimitN('Maximum number of projects to fetch',30);
  PjOwnerOpt;
  OptWeb('Open projects list in the browser@@Ouvre la liste des projets dans le navigateur');
- OptJsonAll;
- CmdJson('projects,totalCount');
+ PjFmtOpts;
  ParseArgs(ArgStart);
  NeedArgs(0,0);
- JsonSetup('projects,totalCount');
  Lim:=OptInt('limit',30);
  If OptHas('web')Then Begin
   InitHostOpt;PjUseViewer;
@@ -15729,9 +16073,9 @@ Begin
  O:=PjQuery('$n:Int!','projectsV2(first:$n){totalCount nodes{'+PjFields+'}}','{"n":'+IStr(Lim)+'}');
  L:=JPath(O,'projectsV2.nodes');
  If(L<0)or(JP[L].Cnt=0)Then Begin WriteLn(StdErr,'No projects found for ',IfThen_(PjUseViewer,'@me',PjOwner));Halt(0);End;
- If UseJson Then Begin
+ If PjJson Then Begin
   Cnt:=JI(O,'projectsV2.totalCount');
-  EmitJson('{"projects":'+RawJson(L)+',"totalCount":'+IStr(Cnt)+'}');
+  PjEmit('{"projects":'+RawJson(L)+',"totalCount":'+IStr(Cnt)+'}');
   Exit;
  End;
  TblBegin('NUMBER'#9'TITLE'#9'STATE'#9'ID');
@@ -15749,14 +16093,14 @@ Var
  P:LongInt;
 Begin
  CmdBegin('project view','[<number>]');
- Opt('format','','string','Output format: {json}@@Format de sortie : {json}');
+ PjFmtOpts;
  PjOwnerOpt;
  OptWeb('Open a project in the browser@@Ouvre un projet dans le navigateur');
  ParseArgs(ArgStart);
  NeedArgs(0,1);
  P:=PjFind(PjNumArg);
  If OptHas('web')Then Begin OpenWeb(JS(P,'url'));Exit;End;
- If OptGet('format')='json' Then Begin WriteLn(RawJson(P));Exit;End;
+ If PjJson Then Begin PjEmit(RawJson(P));Exit;End;
  WriteLn(JS(P,'title'));
  If JS(P,'shortDescription')<>'' Then WriteLn(JS(P,'shortDescription'));
  WriteLn;
@@ -15773,7 +16117,7 @@ Var
  D:LongInt;
 Begin
  CmdBegin('project create','');
- Opt('format','','string','Output format: {json}@@Format de sortie : {json}');
+ PjFmtOpts;
  PjOwnerOpt;
  Opt('title','','string','Title for the project@@Titre du projet');
  ParseArgs(ArgStart);
@@ -15781,7 +16125,7 @@ Begin
  MustFlag('title');
  D:=Gql('mutation($o:ID!,$t:String!){createProjectV2(input:{ownerId:$o,title:$t}){projectV2{'+PjFields+'}}}',
    '{"o":'+JQ(PjOwnerId)+',"t":'+JQ(OptGet('title'))+'}');
- If OptGet('format')='json' Then WriteLn(RawJson(JPath(D,'createProjectV2.projectV2')))
+ If PjJson Then PjEmit(RawJson(JPath(D,'createProjectV2.projectV2')))
  Else PjPrint(JPath(D,'createProjectV2.projectV2'));
 End;
 
@@ -15792,7 +16136,7 @@ Var
 Begin
  CmdBegin('project edit','[<number>]');
  Opt('description','d','string','New description of the project@@Nouvelle description du projet');
- Opt('format','','string','Output format: {json}@@Format de sortie : {json}');
+ PjFmtOpts;
  PjOwnerOpt;
  Opt('readme','','string','New readme for the project@@Nouveau readme du projet');
  Opt('title','','string','New title for the project@@Nouveau titre du projet');
@@ -15808,7 +16152,7 @@ Begin
  If OptHas('visibility')Then FB(Inp,'public',UpStr(OptGet('visibility'))='PUBLIC');
  If Inp.N=1 Then Die2('no changes specified; use --title, --description, --readme or --visibility',1);
  D:=Gql('mutation($i:UpdateProjectV2Input!){updateProjectV2(input:$i){projectV2{'+PjFields+'}}}','{"i":'+ObjOf(Inp)+'}');
- If OptGet('format')='json' Then WriteLn(RawJson(JPath(D,'updateProjectV2.projectV2')))
+ If PjJson Then PjEmit(RawJson(JPath(D,'updateProjectV2.projectV2')))
  Else PjPrint(JPath(D,'updateProjectV2.projectV2'));
 End;
 
@@ -15818,7 +16162,7 @@ Var
  Undo:Boolean;
 Begin
  CmdBegin('project close','[<number>]');
- Opt('format','','string','Output format: {json}@@Format de sortie : {json}');
+ PjFmtOpts;
  PjOwnerOpt;
  Opt('undo','','','Reopen a closed project@@Rouvre un projet ferm'+#130+'');
  ParseArgs(ArgStart);
@@ -15827,7 +16171,7 @@ Begin
  Undo:=OptHas('undo');
  D:=Gql('mutation($p:ID!,$c:Boolean!){updateProjectV2(input:{projectId:$p,closed:$c}){projectV2{'+PjFields+'}}}',
    '{"p":'+JQ(JS(P,'id'))+',"c":'+JBool(not Undo)+'}');
- If OptGet('format')='json' Then WriteLn(RawJson(JPath(D,'updateProjectV2.projectV2')))
+ If PjJson Then PjEmit(RawJson(JPath(D,'updateProjectV2.projectV2')))
  Else PjPrint(JPath(D,'updateProjectV2.projectV2'));
 End;
 
@@ -15836,13 +16180,14 @@ Var
  P,D:LongInt;
 Begin
  CmdBegin('project delete','[<number>]');
- Opt('format','','string','Output format: {json}@@Format de sortie : {json}');
+ PjFmtOpts;
  PjOwnerOpt;
  ParseArgs(ArgStart);
  NeedArgs(0,1);
  P:=PjFind(PjNumArg);
  D:=Gql('mutation($p:ID!){deleteProjectV2(input:{projectId:$p}){projectV2{id}}}','{"p":'+JQ(JS(P,'id'))+'}');
- If OptGet('format')<>'json' Then WriteLn(JS(P,'url'));
+ If not PjJson Then WriteLn(JS(P,'url'))
+ Else PjEmit(RawJson(P));
 End;
 
 Procedure CmdProjectCopy;
@@ -15853,7 +16198,7 @@ Var
 Begin
  CmdBegin('project copy','[<number>]');
  Opt('drafts','','','Include draft issues when copying@@Inclut les brouillons de tickets lors de la copie');
- Opt('format','','string','Output format: {json}@@Format de sortie : {json}');
+ PjFmtOpts;
  Opt('source-owner','','string','Login of the source owner. Use "@me" for the current user.@@Identifiant du propri'+#130+'taire source');
  Opt('target-owner','','string','Login of the target owner. Use "@me" for the current user.@@Identifiant du propri'+#130+'taire cible');
  Opt('title','','string','Title for the new project@@Titre du nouveau projet');
@@ -15873,7 +16218,7 @@ Begin
  Else TgtId:=JS(Gql('query($l:String!){repositoryOwner(login:$l){id}}','{"l":'+JQ(Tgt)+'}'),'repositoryOwner.id');
  D:=Gql('mutation($p:ID!,$o:ID!,$t:String!,$d:Boolean){copyProjectV2(input:{projectId:$p,ownerId:$o,title:$t,includeDraftIssues:$d}){projectV2{'+PjFields+'}}}',
    '{"p":'+JQ(JS(P,'id'))+',"o":'+JQ(TgtId)+',"t":'+JQ(OptGet('title'))+',"d":'+JBool(OptHas('drafts'))+'}');
- If OptGet('format')='json' Then WriteLn(RawJson(JPath(D,'copyProjectV2.projectV2')))
+ If PjJson Then PjEmit(RawJson(JPath(D,'copyProjectV2.projectV2')))
  Else PjPrint(JPath(D,'copyProjectV2.projectV2'));
 End;
 
@@ -15883,7 +16228,7 @@ Var
  Undo:Boolean;
 Begin
  CmdBegin('project mark-template','[<number>]');
- Opt('format','','string','Output format: {json}@@Format de sortie : {json}');
+ PjFmtOpts;
  PjOwnerOpt;
  Opt('undo','','','Unmark the project as a template.@@Retire le statut de mod'+#138+'le du projet.');
  ParseArgs(ArgStart);
@@ -15901,7 +16246,7 @@ Var
  Lim:LongInt;
 Begin
  CmdBegin('project field-list','[<number>]');
- Opt('format','','string','Output format: {json}@@Format de sortie : {json}');
+ PjFmtOpts;
  OptLimitN('Maximum number of fields to fetch',30);
  PjOwnerOpt;
  ParseArgs(ArgStart);
@@ -15911,7 +16256,7 @@ Begin
  O:=Gql('query($p:ID!,$n:Int!){node(id:$p){... on ProjectV2{fields(first:$n){totalCount nodes{... on ProjectV2FieldCommon{id name dataType} ... on ProjectV2SingleSelectField{options{id name}} ... on ProjectV2IterationField{id}}}}}}',
    '{"p":'+JQ(JS(P,'id'))+',"n":'+IStr(Lim)+'}');
  F:=JPath(O,'node.fields.nodes');
- If OptGet('format')='json' Then Begin WriteLn(RawJson(F));Exit;End;
+ If PjJson Then Begin PjEmit(RawJson(F));Exit;End;
  If(F<0)or(JP[F].Cnt=0)Then Begin WriteLn(StdErr,'Project ',PjNumArg,' for owner has no fields');Halt(1);End;
  TblBegin('NAME'#9'DATA TYPE'#9'ID');
  C:=JP[F].First;
@@ -15932,7 +16277,7 @@ Var
 Begin
  CmdBegin('project field-create','[<number>]');
  Opt('data-type','','string','DataType of the new field.: {TEXT|SINGLE_SELECT|DATE|NUMBER}@@Type de donn'+#130+'es du nouveau champ : {TEXT|SINGLE_SELECT|DATE|NUMBER}');
- Opt('format','','string','Output format: {json}@@Format de sortie : {json}');
+ PjFmtOpts;
  Opt('name','','string','Name of the new field@@Nom du nouveau champ');
  PjOwnerOpt;
  Opt('single-select-options','','strings','Options for SINGLE_SELECT data type@@Options pour le type SINGLE_SELECT');
@@ -15951,14 +16296,14 @@ Begin
  End
  Else D:=Gql('mutation($p:ID!,$n:String!,$t:ProjectV2CustomFieldType!){createProjectV2Field(input:{projectId:$p,dataType:$t,name:$n}){projectV2Field{... on ProjectV2Field{id name dataType}}}}',
    '{"p":'+JQ(JS(P,'id'))+',"n":'+JQ(OptGet('name'))+',"t":'+JQ(Dt)+'}');
- If OptGet('format')='json' Then WriteLn(RawJson(JPath(D,'createProjectV2Field.projectV2Field')))
+ If PjJson Then PjEmit(RawJson(JPath(D,'createProjectV2Field.projectV2Field')))
  Else WriteLn(StdErr,#226#156#147' Created field ',OptGet('name'));
 End;
 
 Procedure CmdProjectFieldDelete;
 Begin
  CmdBegin('project field-delete','');
- Opt('format','','string','Output format: {json}@@Format de sortie : {json}');
+ PjFmtOpts;
  Opt('id','','string','ID of the field to delete@@Identifiant du champ '+#133+' supprimer');
  ParseArgs(ArgStart);
  NeedArgs(0,0);
@@ -15975,18 +16320,19 @@ Var
  Ty,Title,Num,Repo:AnsiString;
 Begin
  CmdBegin('project item-list','[<number>]');
- Opt('format','','string','Output format: {json}@@Format de sortie : {json}');
+ PjFmtOpts;
  OptLimitN('Maximum number of items to fetch',30);
  PjOwnerOpt;
+ Opt('query','','string','Filter items using the Projects filter syntax, e.g. "assignee:octocat -status:Done"@@Filtre les '+#130+'l'+#130+'ments avec la syntaxe de filtre des projets');
  ParseArgs(ArgStart);
  NeedArgs(0,1);
  Lim:=OptInt('limit',30);
  P:=PjFind(PjNumArg);
- O:=Gql('query($p:ID!,$n:Int!){node(id:$p){... on ProjectV2{items(first:$n){totalCount nodes{id type content{... on Issue{title number repository{nameWithOwner}} ... on PullRequest{title number repository{nameWithOwner}} ... on DraftIssue{title body}}}}}}}',
-   '{"p":'+JQ(JS(P,'id'))+',"n":'+IStr(Lim)+'}');
+ O:=Gql('query($p:ID!,$n:Int!,$q:String){node(id:$p){... on ProjectV2{items(first:$n,query:$q){totalCount nodes{id type content{... on Issue{title number repository{nameWithOwner}} ... on PullRequest{title number repository{nameWithOwner}} ... on DraftIssue{title body}}}}}}}',
+   '{"p":'+JQ(JS(P,'id'))+',"n":'+IStr(Lim)+',"q":'+IfThen_(OptHas('query'),JQ(OptGet('query')),'null')+'}');
  F:=JPath(O,'node.items.nodes');
- If OptGet('format')='json' Then Begin
-  WriteLn('{"items":',RawJson(F),',"totalCount":',JI(O,'node.items.totalCount'),'}');Exit;
+ If PjJson Then Begin
+  PjEmit('{"items":'+RawJson(F)+',"totalCount":'+IStr(JI(O,'node.items.totalCount'))+'}');Exit;
  End;
  If(F<0)or(JP[F].Cnt=0)Then Begin WriteLn(StdErr,'Project ',PjNumArg,' for owner has no items');Halt(1);End;
  TblBegin('TYPE'#9'TITLE'#9'NUMBER'#9'REPOSITORY'#9'ID');
@@ -16021,7 +16367,7 @@ Var
  P,D:LongInt;
 Begin
  CmdBegin('project item-add','[<number>]');
- Opt('format','','string','Output format: {json}@@Format de sortie : {json}');
+ PjFmtOpts;
  PjOwnerOpt;
  Opt('url','','string','URL of the issue or pull request to add to the project@@URL du ticket ou de la pull request '+#133+' ajouter');
  ParseArgs(ArgStart);
@@ -16030,7 +16376,7 @@ Begin
  P:=PjFind(PjNumArg);
  D:=Gql('mutation($p:ID!,$c:ID!){addProjectV2ItemById(input:{projectId:$p,contentId:$c}){item{id}}}',
    '{"p":'+JQ(JS(P,'id'))+',"c":'+JQ(ContentIdFromUrl(OptGet('url')))+'}');
- If OptGet('format')='json' Then WriteLn(RawJson(JPath(D,'addProjectV2ItemById.item')))
+ If PjJson Then PjEmit(RawJson(JPath(D,'addProjectV2ItemById.item')))
  Else WriteLn(StdErr,#226#156#147' Added item ',JS(D,'addProjectV2ItemById.item.id'));
 End;
 
@@ -16040,7 +16386,7 @@ Var
 Begin
  CmdBegin('project item-create','[<number>]');
  Opt('body','','string','Body for the draft issue@@Corps du brouillon de ticket');
- Opt('format','','string','Output format: {json}@@Format de sortie : {json}');
+ PjFmtOpts;
  PjOwnerOpt;
  Opt('title','','string','Title for the draft issue@@Titre du brouillon de ticket');
  ParseArgs(ArgStart);
@@ -16049,7 +16395,7 @@ Begin
  P:=PjFind(PjNumArg);
  D:=Gql('mutation($p:ID!,$t:String!,$b:String){addProjectV2DraftIssue(input:{projectId:$p,title:$t,body:$b}){projectItem{id}}}',
    '{"p":'+JQ(JS(P,'id'))+',"t":'+JQ(OptGet('title'))+',"b":'+IfThen_(OptHas('body'),JQ(OptGet('body')),'null')+'}');
- If OptGet('format')='json' Then WriteLn(RawJson(JPath(D,'addProjectV2DraftIssue.projectItem')))
+ If PjJson Then PjEmit(RawJson(JPath(D,'addProjectV2DraftIssue.projectItem')))
  Else WriteLn(StdErr,#226#156#147' Created item ',JS(D,'addProjectV2DraftIssue.projectItem.id'));
 End;
 
@@ -16063,7 +16409,7 @@ Begin
  Opt('clear','','','Remove field value@@Retire la valeur du champ');
  Opt('date','','string','Date value for the field (YYYY-MM-DD)@@Valeur de date du champ (AAAA-MM-JJ)');
  Opt('field-id','','string','ID of the field to update@@Identifiant du champ '+#133+' modifier');
- Opt('format','','string','Output format: {json}@@Format de sortie : {json}');
+ PjFmtOpts;
  Opt('id','','string','ID of the item to edit@@Identifiant de l'''+#130+'l'+#130+'ment '+#133+' modifier');
  Opt('iteration-id','','string','ID of the iteration value to set on the field@@Identifiant de l''it'+#130+'ration');
  Opt('number','','float','Number value for the field@@Valeur num'+#130+'rique du champ');
@@ -16104,7 +16450,7 @@ Var
  P,D:LongInt;
 Begin
  CmdBegin('project item-delete','[<number>]');
- Opt('format','','string','Output format: {json}@@Format de sortie : {json}');
+ PjFmtOpts;
  Opt('id','','string','ID of the item to delete@@Identifiant de l'''+#130+'l'+#130+'ment '+#133+' supprimer');
  PjOwnerOpt;
  ParseArgs(ArgStart);
@@ -16121,7 +16467,7 @@ Var
  P,D:LongInt;
 Begin
  CmdBegin('project item-archive','[<number>]');
- Opt('format','','string','Output format: {json}@@Format de sortie : {json}');
+ PjFmtOpts;
  Opt('id','','string','ID of the item to archive@@Identifiant de l'''+#130+'l'+#130+'ment '+#133+' archiver');
  PjOwnerOpt;
  Opt('undo','','','Unarchive an item@@D'+#130+'sarchive un '+#130+'l'+#130+'ment');
@@ -16143,7 +16489,7 @@ Var
  H,O,N:AnsiString;
  T:AnsiString;
 Begin
- If Link Then CmdBegin('project link','[<number>] [flag]') Else CmdBegin('project unlink','[<number>] [flag]');
+ If Link Then CmdBegin('project link','[<number>]') Else CmdBegin('project unlink','[<number>]');
  PjOwnerOpt;
  OptRepo;
  Opt('team','T','string','The team to be linked to this project@@L'''+#130+'quipe '+#133+' lier '+#133+' ce projet');
@@ -16182,9 +16528,11 @@ End;
 { ------------------------------------------------------------------ }
 
 Const
- CsFields='displayName,environmentId,gitStatus,idleTimeoutMinutes,lastUsedAt,location,machineName,name,owner,'+
-  'prebuild,recentFolders,repository,state,vscsTarget';
- CsSpec='displayName=display_name:s;environmentId=environment_id:s;idleTimeoutMinutes=idle_timeout_minutes:n;'+
+ CsFields='billableOwner,createdAt,devcontainerPath,displayName,environmentId,gitStatus,idleTimeoutMinutes,lastUsedAt,'+
+  'location,machineDisplayName,machineName,name,owner,prebuild,recentFolders,repository,retentionExpiresAt,'+
+  'retentionPeriodDays,state,vscsTarget';
+ CsListFields='createdAt,displayName,gitStatus,lastUsedAt,machineName,name,owner,repository,state,vscsTarget';
+ CsSpec='createdAt=created_at:s;devcontainerPath=devcontainer_path:s;machineDisplayName=machine.display_name:s;retentionExpiresAt=retention_expires_at:N;displayName=display_name:s;environmentId=environment_id:s;idleTimeoutMinutes=idle_timeout_minutes:n;'+
   'lastUsedAt=last_used_at:s;location=location:s;name=name:s;state=state:s;vscsTarget=vscs_target:s';
 
 Function CsHook(Node:LongInt;Const F:AnsiString;Var Out_:AnsiString):Boolean;
@@ -16194,6 +16542,8 @@ Begin
   Out_:='{"ahead":'+IStr(JI(Node,'git_status.ahead'))+',"behind":'+IStr(JI(Node,'git_status.behind'))+',"hasUncommittedChanges":'+
     JBool(JB(Node,'git_status.has_uncommitted_changes'))+',"hasUnpushedChanges":'+JBool(JB(Node,'git_status.has_unpushed_changes'))+
     ',"ref":'+JQ(JS(Node,'git_status.ref'))+'}'
+ Else If F='billableOwner' Then Out_:=UserJson(JGet(Node,'billable_owner'))
+ Else If F='retentionPeriodDays' Then Out_:=IStr(JI(Node,'retention_period_minutes')div 1440)
  Else If F='machineName' Then Out_:=JQ(JS(Node,'machine.name'))
  Else If F='owner' Then Out_:=UserJson(JGet(Node,'owner'))
  Else If F='repository' Then Out_:='{"fullName":'+JQ(JS(Node,'repository.full_name'))+',"name":'+JQ(JS(Node,'repository.name'))+'}'
@@ -16208,6 +16558,13 @@ End;
 Function CsPath(Const Nm:AnsiString):AnsiString;
 Begin
  CsPath:='/user/codespaces/'+PathEnc(Nm);
+End;
+
+Procedure CsSelOpts;
+Begin
+ Opt('codespace','c','string','Name of the codespace@@Nom du codespace');
+ Opt('repo','R','string','Filter codespace selection by repository name (user/repo)@@Filtre la s'+#130+'lection des codespaces par nom de d'+#130+'p'+#147+'t (utilisateur/d'+#130+'p'+#147+'t)');
+ Opt('repo-owner','','string','Filter codespace selection by repository owner (username or org)@@Filtre la s'+#130+'lection des codespaces par propri'+#130+'taire du d'+#130+'p'+#147+'t');
 End;
 
 { duree "10m", "1h", "2d" en minutes }
@@ -16232,7 +16589,7 @@ End;
 Function CsName:AnsiString;
 Var
  L:TIList;
- I:LongInt;
+ I,K:LongInt;
  T:Int64;
  S:AnsiString;
 Begin
@@ -16240,6 +16597,15 @@ Begin
  If S<>'' Then Begin CsName:=S;Exit;End;
  InitHostOpt;
  ApiPaged('/user/codespaces',0,'codespaces',L,T);
+ If OptHas('repo')or OptHas('repo-owner')Then Begin
+  K:=0;
+  For I:=0 to L.N-1 do
+   If((not OptHas('repo'))or(JS(L.A[I],'repository.full_name')=OptGet('repo')))and
+     ((not OptHas('repo-owner'))or(JS(L.A[I],'repository.owner.login')=OptGet('repo-owner')))Then Begin
+    L.A[K]:=L.A[I];Inc(K);
+   End;
+  L.N:=K;
+ End;
  If L.N=0 Then Die('you have no codespaces meeting the failed-to-find criteria');
  If L.N=1 Then Begin CsName:=JS(L.A[0],'name');Exit;End;
  If not InteractiveOk Then Die2('--codespace is required when not running interactively',1);
@@ -16261,21 +16627,23 @@ Begin
  CmdAlias('ls');
  OptLimitN('Maximum number of codespaces to list',30);
  Opt('org','o','login','List codespaces for an organization (admin-only)@@Liste les codespaces d''une organisation');
- Opt('repo','r','string','Repository name with owner: user/repo@@D'+#130+'p'+#147+'t au format propri'+#130+'taire/nom');
- Opt('user','u','string','The username to list codespaces for (used with --org)@@L''utilisateur dont lister les codespaces (avec --org)');
+ Opt('repo','R','string','Repository name with owner: user/repo@@D'+#130+'p'+#147+'t au format propri'+#130+'taire/nom');
+ Opt('user','u','username','The username to list codespaces for (used with --org)@@L''utilisateur dont lister les codespaces (avec --org)');
+ Opt('web','w','','List codespaces in the web browser, cannot be used with --user or --org@@Liste les codespaces dans le navigateur');
  OptJsonAll;
- CmdJson(CsFields);
+ CmdJson(CsListFields);
  ParseArgs(ArgStart);
  NeedArgs(0,0);
- JsonSetup(CsFields);
+ JsonSetup(CsListFields);
  InitHostOpt;
  Lim:=OptInt('limit',30);
+ If OptHas('web')Then Begin OpenWeb(WebBaseOf(ApiHost)+'/codespaces');Exit;End;
  If OptHas('repo')Then Path:='/repos/'+OptGet('repo')+'/codespaces'
  Else If OptHas('org')Then Path:='/orgs/'+PathEnc(OptGet('org'))+'/codespaces'
  Else Path:='/user/codespaces';
  ApiPaged(Path,Lim,'codespaces',L,T);
  If UseJson Then Begin EmitItems(L,CsSpec,@CsHook);Exit;End;
- If L.N=0 Then Begin WriteLn(StdErr,'You don''t have any codespaces.');Halt(1);End;
+ If L.N=0 Then NoResults('You don''t have any codespaces.');
  If OutTTY Then TblBegin('NAME'#9'DISPLAY NAME'#9'REPOSITORY'#9'BRANCH'#9'STATE'#9'CREATED AT') Else TblBegin('');
  For I:=0 to L.N-1 do
   TblRow(JS(L.A[I],'name')+#9+JS(L.A[I],'display_name')+#9+JS(L.A[I],'repository.full_name')+#9+JS(L.A[I],'git_status.ref')+#9+
@@ -16293,17 +16661,19 @@ Begin
  CmdBegin('codespace create','');
  Opt('branch','b','string','Repository branch@@Branche du d'+#130+'p'+#147+'t');
  Opt('default-permissions','','','Do not prompt to accept additional permissions requested by the codespace@@Ne demande pas d''accepter les permissions suppl'+#130+'mentaires');
- Opt('devcontainer-path','d','string','Path to the devcontainer.json file to use when creating codespace@@Chemin du fichier devcontainer.json');
- Opt('display-name','','string','Display name for the codespace (48 characters or less)@@Nom d''affichage du codespace');
+ Opt('devcontainer-path','','string','Path to the devcontainer.json file to use when creating codespace@@Chemin du fichier devcontainer.json');
+ Opt('display-name','d','string','Display name for the codespace (48 characters or less)@@Nom d''affichage du codespace');
  Opt('idle-timeout','','duration','Allowed inactivity before codespace is stopped, e.g. "10m", "1h"@@Inactivit'+#130+' permise avant l''arr'+#136+'t du codespace');
  Opt('location','l','string','Location: {EastUs|SouthEastAsia|WestEurope|WestUs2} (determined automatically if not provided)@@R'+#130+'gion du codespace');
  Opt('machine','m','string','Hardware specifications for the VM@@Sp'+#130+'cifications mat'+#130+'rielles de la machine virtuelle');
  Opt('repo','R','string','Repository name with owner: user/repo@@D'+#130+'p'+#147+'t au format propri'+#130+'taire/nom');
  Opt('retention-period','','duration','Allowed time after shutting down before the codespace is automatically deleted (maximum 30 days), e.g. "1h", "72h"@@D'+#130+'lai avant suppression automatique');
  Opt('status','s','','Show status of post-create command and dotfiles@@Affiche l'''+#130+'tat des commandes post-cr'+#130+'ation');
+ Opt('web','w','','Create codespace from browser, cannot be used with --display-name, --idle-timeout, or --retention-period@@Cr'+#130+'e le codespace depuis le navigateur');
  ParseArgs(ArgStart);
  NeedArgs(0,0);
  InitHostOpt;
+ If OptHas('web')Then Begin OpenWeb(WebBaseOf(ApiHost)+'/codespaces/new');Exit;End;
  Repo:=OptGet('repo');
  If Repo='' Then Begin
   If ResolveRepo(False)Then Repo:=RepoFull Else Die2('repository is required (use -R OWNER/REPO)',1);
@@ -16332,11 +16702,10 @@ Var
 Begin
  CmdBegin('codespace delete','');
  Opt('all','','','Delete all codespaces@@Supprime tous les codespaces');
- Opt('codespace','c','string','Name of the codespace@@Nom du codespace');
+ CsSelOpts;
  Opt('days','','N','Delete codespaces older than N days@@Supprime les codespaces de plus de N jours');
  Opt('force','f','','Skip confirmation for codespaces that contain unsaved changes@@Ignore la confirmation pour les codespaces contenant des changements non enregistr'+#130+'s');
  Opt('org','o','login','The login handle of the organization (admin-only)@@L''identifiant de l''organisation');
- Opt('repo','r','string','Delete codespaces for a repository@@Supprime les codespaces d''un d'+#130+'p'+#147+'t');
  Opt('user','u','string','The username to delete codespaces for (used with --org)@@L''utilisateur dont supprimer les codespaces (avec --org)');
  ParseArgs(ArgStart);
  NeedArgs(0,0);
@@ -16367,7 +16736,7 @@ Var
  Nm:AnsiString;
 Begin
  CmdBegin('codespace stop','');
- Opt('codespace','c','string','Name of the codespace@@Nom du codespace');
+ CsSelOpts;
  Opt('org','o','login','The login handle of the organization (admin-only)@@L''identifiant de l''organisation');
  Opt('user','u','username','The username to stop codespace for (used with --org)@@L''utilisateur dont arr'+#136+'ter le codespace');
  ParseArgs(ArgStart);
@@ -16383,10 +16752,9 @@ Var
  J:LongInt;
 Begin
  CmdBegin('codespace view','');
- Opt('codespace','c','string','Name of the codespace@@Nom du codespace');
+ CsSelOpts;
  OptJsonAll;
  CmdJson(CsFields);
- Opt('repo','R','string','Filter codespace selection by repository name (user/repo)@@Filtre par d'+#130+'p'+#147+'t');
  ParseArgs(ArgStart);
  NeedArgs(0,0);
  JsonSetup(CsFields);
@@ -16411,10 +16779,9 @@ Var
  J:LongInt;
 Begin
  CmdBegin('codespace edit','');
- Opt('codespace','c','string','Name of the codespace@@Nom du codespace');
+ CsSelOpts;
  Opt('display-name','d','string','Set the display name@@D'+#130+'finit le nom d''affichage');
  Opt('machine','m','string','Set hardware specifications for the VM@@D'+#130+'finit les sp'+#130+'cifications mat'+#130+'rielles');
- Opt('repo','r','string','Filter codespace selection by repository name (user/repo)@@Filtre par d'+#130+'p'+#147+'t');
  ParseArgs(ArgStart);
  NeedArgs(0,0);
  InitHostOpt;
@@ -16430,7 +16797,7 @@ End;
 Procedure CmdCodespaceRebuild;
 Begin
  CmdBegin('codespace rebuild','');
- Opt('codespace','c','string','Name of the codespace@@Nom du codespace');
+ CsSelOpts;
  Opt('full','','','Perform a full rebuild@@Effectue une reconstruction compl'+#138+'te');
  ParseArgs(ArgStart);
  Die2('gh codespace rebuild uses the Codespaces tunnel protocol, which is not supported by this clone',1);
@@ -16439,8 +16806,9 @@ End;
 Procedure CmdCodespacePorts;
 Begin
  CmdBegin('codespace ports','');
- Opt('codespace','c','string','Name of the codespace@@Nom du codespace');
+ CsSelOpts;
  OptJsonAll;
+ CmdJson('browseUrl,label,sourcePort,visibility');
  ParseArgs(ArgStart);
  Die2('gh codespace ports uses the Codespaces tunnel protocol, which is not supported by this clone',1);
 End;
@@ -16451,7 +16819,7 @@ Var
  J:LongInt;
 Begin
  CmdBegin('codespace ssh','[<flags>...] [-- <ssh-flags>...] [<command>]');
- Opt('codespace','c','string','Name of the codespace@@Nom du codespace');
+ CsSelOpts;
  Opt('config','','','Write OpenSSH configuration to stdout@@'+#144+'crit la configuration OpenSSH sur la sortie standard');
  ParseArgs(ArgStart);
  Die2('gh codespace ssh uses the Codespaces tunnel protocol, which is not supported by this clone',1);
@@ -16462,7 +16830,7 @@ Var
  Nm:AnsiString;
 Begin
  CmdBegin('codespace code','');
- Opt('codespace','c','string','Name of the codespace@@Nom du codespace');
+ CsSelOpts;
  Opt('insiders','','','Use the insiders version of Visual Studio Code@@Utilise la version Insiders de Visual Studio Code');
  OptWeb('Use the web version of Visual Studio Code@@Utilise la version web de Visual Studio Code');
  ParseArgs(ArgStart);
@@ -16475,7 +16843,7 @@ End;
 Procedure CmdCodespaceCp;
 Begin
  CmdBegin('codespace cp','[-e] [-r] [-- [<scp flags>...]] <sources>... <dest>');
- Opt('codespace','c','string','Name of the codespace@@Nom du codespace');
+ CsSelOpts;
  Opt('expand','e','','Expand remote file names on remote shell@@D'+#130+'veloppe les noms de fichiers distants');
  Opt('recursive','r','','Recursively copy directories@@Copie les r'+#130+'pertoires r'+#130+'cursivement');
  ParseArgs(ArgStart);
@@ -16485,7 +16853,7 @@ End;
 Procedure CmdCodespaceLogs;
 Begin
  CmdBegin('codespace logs','');
- Opt('codespace','c','string','Name of the codespace@@Nom du codespace');
+ CsSelOpts;
  Opt('follow','f','','Tail and follow the logs@@Suit les journaux');
  ParseArgs(ArgStart);
  Die2('gh codespace logs uses the Codespaces tunnel protocol, which is not supported by this clone',1);
@@ -16494,7 +16862,7 @@ End;
 Procedure CmdCodespaceJupyter;
 Begin
  CmdBegin('codespace jupyter','');
- Opt('codespace','c','string','Name of the codespace@@Nom du codespace');
+ CsSelOpts;
  ParseArgs(ArgStart);
  Die2('gh codespace jupyter uses the Codespaces tunnel protocol, which is not supported by this clone',1);
 End;
@@ -16565,7 +16933,7 @@ Begin
  ParseArgs(ArgStart);
  NeedArgs(0,0);
  ListExtensions(Names);
- If Names.N=0 Then Begin WriteLn(StdErr,'No installed extensions found');Halt(1);End;
+ If Names.N=0 Then NoResults('No installed extensions found');
  TblBegin('NAME'#9'REPO'#9'VERSION');
  For I:=0 to Names.N-1 do Begin
   Dir:=JoinPath(ExtDir,Names.A[I]);
@@ -16788,6 +17156,8 @@ Begin
  Opt('license','','strings','Filter based on license type@@Filtre selon le type de licence');
  OptLimitN('Maximum number of search results',30);
  Opt('owner','','strings','Filter on owner@@Filtre selon le propri'+#130+'taire');
+ Opt('order','','string','Order of repositories returned, ignored unless ''--sort'' flag is specified: {asc|desc} (default "desc")@@Ordre des d'+#130+'p'+#147+'ts, ignor'+#130+' sans --sort : {asc|desc}');
+ Opt('sort','','string','Sort fetched repositories: {forks|help-wanted-issues|stars|updated} (default "best-match")@@Trie les d'+#130+'p'+#147+'ts');
  OptWeb('Open the search query in the web browser@@Ouvre la recherche dans le navigateur');
  OptJsonAll;
  CmdJson(SrRepoFields);
@@ -16799,9 +17169,9 @@ Begin
  QualAdd(Q_,'topic','gh-extension');
  QualOpt(Q_,'license','license');QualOpt(Q_,'owner','user');
  If OptHas('web')Then Begin OpenWeb(WebBaseOf(ApiHost)+'/search?q='+UrlEnc(Q_,False)+'&type=repositories');Exit;End;
- RunSearch('repositories',Q_,OptInt('limit',30),L,T,'&sort=stars&order=desc','');
+ RunSearch('repositories',Q_,OptInt('limit',30),L,T,IfThen_(OptHas('sort'),SortParams,'&sort=stars&order=desc'),'');
  If UseJson Then Begin EmitItems(L,SrRepoSpec,@SearchHook);Exit;End;
- If L.N=0 Then Begin WriteLn(StdErr,'No extensions found');Halt(1);End;
+ If L.N=0 Then NoResults('No extensions found');
  ShowingLine(L.N,T,'extensions','');
  TblBegin('');
  For I:=0 to L.N-1 do
@@ -16816,12 +17186,11 @@ Var
  I:LongInt;
 Begin
  CmdBegin('extension browse','');
- Opt('debug','','','log to /tmp/extBrowse@@'+#130+'crit un journal de d'+#130+'bogage');
- OptWeb('Open the GitHub Topic page for extensions in the web browser@@Ouvre la page des sujets des extensions dans le navigateur');
+ Opt('debug','','','Log to /tmp/extBrowse-*@@'+#144+'crit un journal de d'+#130+'bogage');
+ Opt('single-column','s','','Render TUI with only one column of text@@Affiche une seule colonne de texte');
  ParseArgs(ArgStart);
  NeedArgs(0,0);
  InitHostOpt;
- If OptHas('web')Then Begin OpenWeb(WebBaseOf(ApiHost)+'/topics/gh-extension');Exit;End;
  RunSearch('repositories','topic:gh-extension',30,L,T,'&sort=stars&order=desc','');
  For I:=0 to L.N-1 do
   WriteLn(PadR(JS(L.A[I],'full_name'),40),' ',JI(L.A[I],'stargazers_count'),'  ',JS(L.A[I],'description'));
@@ -16868,7 +17237,563 @@ Begin
  WriteLn(StdErr,'Install locally with: cd ',Nm,' && gh extension install .');
 End;
 { ------------------------------------------------------------------ }
-{ Aide generale, sujets d'aide, distribution des commandes             }
+{ Commandes de gh non prises en charge par ce clone                    }
+{ ------------------------------------------------------------------ }
+
+{ n'accepte que --help ; sinon signale que la commande n'est pas disponible }
+Procedure StubRun(Const Why:AnsiString);
+Var
+ I:LongInt;
+Begin
+ For I:=ArgStart to ParamCount do
+  If(ParamStr(I)='--help')or(ParamStr(I)='-h')or(ParamStr(I)='/?')Then Begin PrintCmdHelp;Halt(0);End;
+ ParseArgs(ArgStart);
+ Die2('gh '+CmdPath+': '+Why+' is not supported by this Pascal clone',1);
+End;
+
+Procedure CmdAgentTaskCreate;
+Begin
+ CmdBegin('agent-task create','[<task description>]');
+ Opt('base','b','string','Base branch for the pull request (use default branch if not provided)@@Branche de base de la pull request');
+ Opt('custom-agent','a','string','Use a custom agent for the task@@Utilise un agent personnalis'+#130+' pour la t'+#131+'che');
+ Opt('follow','','','Follow agent session logs@@Suit les journaux de la session de l''agent');
+ Opt('from-file','F','file','Read task description from file (use "-" to read from standard input)@@Lit la description de la t'+#131+'che depuis un fichier');
+ StubRun('the agent tasks preview API');
+End;
+
+Procedure CmdAgentTaskList;
+Begin
+ CmdBegin('agent-task list','');
+ OptLimitN('Maximum number of agent tasks to fetch',30);
+ OptWeb('Open agent tasks in the browser@@Ouvre les t'+#131+'ches d''agent dans le navigateur');
+ OptJsonAll;
+ CmdJson('completedAt,createdAt,id,name,pullRequestNumber,pullRequestState,pullRequestTitle,pullRequestUrl,repository,state,updatedAt,user');
+ StubRun('the agent tasks preview API');
+End;
+
+Procedure CmdAgentTaskView;
+Begin
+ CmdBegin('agent-task view','[<session-id> | <pr-number> | <pr-url> | <pr-branch>]');
+ Opt('follow','','','Follow agent session logs@@Suit les journaux de la session de l''agent');
+ Opt('log','','','Show agent session logs@@Affiche les journaux de la session de l''agent');
+ OptWeb('Open agent task in the browser@@Ouvre la t'+#131+'che d''agent dans le navigateur');
+ OptJsonAll;
+ CmdJson('completedAt,createdAt,id,name,pullRequestNumber,pullRequestState,pullRequestTitle,pullRequestUrl,repository,state,updatedAt,user');
+ StubRun('the agent tasks preview API');
+End;
+
+Procedure CmdAttestationDownload;
+Begin
+ CmdBegin('attestation download','[<file-path> | oci://<image-uri>] [--owner | --repo]');
+ Opt('digest-alg','d','string','The algorithm used to compute a digest of the artifact: {sha256|sha512} (default "sha256")@@Algorithme de condens'+#130+' de l''artefact');
+ Opt('limit','L','int','Maximum number of attestations to fetch (default 30)@@Nombre maximal d''attestations '+#133+' r'+#130+'cup'+#130+'rer (d'+#130+'faut 30)');
+ Opt('owner','o','string','GitHub organization to scope attestation lookup by@@Organisation GitHub de la recherche');
+ Opt('repo','R','string','Repository name in the format <owner>/<repo>@@D'+#130+'p'+#147+'t au format <propri'+#130+'taire>/<d'+#130+'p'+#147+'t>');
+ StubRun('the Sigstore bundle handling');
+End;
+
+Procedure CmdAttestationTrustedRoot;
+Begin
+ CmdBegin('attestation trusted-root','[--tuf-url <url> --tuf-root <file-path>] [--verify-only]');
+ Opt('tuf-root','','string','Path to the TUF root.json file on disk@@Chemin du fichier TUF root.json');
+ Opt('tuf-url','','string','URL to the TUF repository mirror@@URL du miroir du d'+#130+'p'+#147+'t TUF');
+ Opt('verify-only','','','Don''t output the trusted_root.jsonl contents@@N''affiche pas le contenu de trusted_root.jsonl');
+ StubRun('the TUF trust root handling');
+End;
+
+Procedure CmdAttestationVerify;
+Begin
+ CmdBegin('attestation verify','[<file-path> | oci://<image-uri>] [--owner | --repo]');
+ Opt('owner','o','string','GitHub organization to scope attestation lookup by@@Organisation GitHub de la recherche');
+ Opt('repo','R','string','Repository name in the format <owner>/<repo>@@D'+#130+'p'+#147+'t au format <propri'+#130+'taire>/<d'+#130+'p'+#147+'t>');
+ Opt('bundle','b','string','Path to bundle on disk, either a single bundle in a JSON file or a JSON lines file with multiple bundles@@Chemin du bundle');
+ OptJsonAll;
+ StubRun('the Sigstore signature verification');
+End;
+
+Procedure CmdReleaseVerify;
+Begin
+ CmdBegin('release verify','[<tag>]');
+ OptRepo;
+ OptJsonAll;
+ StubRun('the release attestation verification');
+End;
+
+Procedure CmdReleaseVerifyAsset;
+Begin
+ CmdBegin('release verify-asset','[<tag>] <file-path>');
+ OptRepo;
+ OptJsonAll;
+ StubRun('the release asset attestation verification');
+End;
+
+Procedure CmdCodespacePortsForward;
+Begin
+ CmdBegin('codespace ports forward','<remote-port>:<local-port>...');
+ CsSelOpts;
+ StubRun('port forwarding (Codespaces tunnel protocol)');
+End;
+
+Procedure CmdCodespacePortsVisibility;
+Begin
+ CmdBegin('codespace ports visibility','<port>:{public|private|org}...');
+ CsSelOpts;
+ StubRun('port visibility (Codespaces tunnel protocol)');
+End;
+
+Procedure CmdPreviewPrompter;
+Begin
+ CmdBegin('preview prompter','[prompt type]');
+ StubRun('the interactive prompter preview');
+End;
+
+{ lance le programme copilot s'il est installe }
+Procedure CmdCopilot;
+Var
+ Exe,Cmd:AnsiString;
+ I:LongInt;
+Begin
+ CmdBegin('copilot','[flags] [args]');
+ Opt('remove','','','Remove the installed GitHub Copilot CLI@@Supprime la CLI GitHub Copilot install'+#130+'e');
+ If(ArgStart<=ParamCount)and((ParamStr(ArgStart)='--help')or(ParamStr(ArgStart)='-h'))Then Begin PrintCmdHelp;Halt(0);End;
+ Exe:=WhichCmd('copilot');
+ If Exe='' Then Die2('GitHub Copilot CLI is not installed; install it with: npm install -g @github/copilot',1);
+ Cmd:='';
+ For I:=ArgStart to ParamCount do Cmd:=Cmd+' '+Q(ParamStr(I));
+ Halt(RunShell(Q(Exe)+Cmd));
+End;
+
+Procedure CmdLicenses;
+Begin
+ CmdBegin('licenses','');
+ ParseArgs(ArgStart);
+ WriteLn(Lg('This build is a Pascal clone of the GitHub CLI and does not embed any third-party library.',
+   'Cette version est un clone Pascal de GitHub CLI et n''int'+#138+'gre aucune biblioth'+#138+'que tierce.'));
+ WriteLn;
+ WriteLn(Lg('GH.PAS is distributed under the MIT license.','GH.PAS est distribu'+#130+' sous la licence MIT.'));
+End;
+{ ------------------------------------------------------------------ }
+{ Sujets d'aide (gh help environment, formatting, ...) : textes de gh    }
+{ ------------------------------------------------------------------ }
+
+Procedure PrintHelpTopic(Const T:AnsiString);
+Begin
+ If T='accessibility' Then Begin
+  WriteLn('Learn about GitHub CLI''s accessibility experiences');
+  WriteLn('');
+  WriteLn('As the home for all developers, we want every developer to feel welcome in our');
+  WriteLn('community and be empowered to contribute to the future of global software');
+  WriteLn('development with everything GitHub has to offer including the GitHub CLI.');
+  WriteLn('');
+  WriteLn('Customizable and contrasting colors');
+  WriteLn('');
+  WriteLn('Text interfaces often use color for various purposes, but insufficient contrast');
+  WriteLn('or customizability can leave some users unable to benefit.');
+  WriteLn('');
+  WriteLn('For a more accessible experience, the GitHub CLI can use color palettes');
+  WriteLn('based on terminal background appearance and limit colors to 4-bit ANSI color');
+  WriteLn('palettes, which users can customize within terminal preferences.');
+  WriteLn('');
+  WriteLn('With this new experience, the GitHub CLI provides multiple options to address');
+  WriteLn('color usage:');
+  WriteLn('');
+  WriteLn('1. The GitHub CLI will use 4-bit color palette for increased color contrast based');
+  WriteLn('   on dark and light backgrounds including rendering Markdown based on the');
+  WriteLn('   GitHub Primer design system.');
+  WriteLn('');
+  WriteLn('   To enable this experience, use one of the following methods:');
+  WriteLn('   - Run `gh config set accessible_colors enabled`');
+  WriteLn('   - Set `GH_ACCESSIBLE_COLORS=enabled` environment variable');
+  WriteLn('');
+  WriteLn('2. The GitHub CLI will display issue and pull request labels'' custom RGB colors');
+  WriteLn('   in terminals with true color support.');
+  WriteLn('');
+  WriteLn('   To enable this experience, use one of the following methods:');
+  WriteLn('   - Run `gh config set color_labels enabled`');
+  WriteLn('   - Set `GH_COLOR_LABELS=enabled` environment variable');
+  WriteLn('');
+  WriteLn('Non-interactive user input prompting');
+  WriteLn('');
+  WriteLn('Interactive text user interfaces manipulate the terminal cursor to redraw parts');
+  WriteLn('of the screen, which can be difficult for speech synthesizers or braille displays');
+  WriteLn('to accurately detect and read.');
+  WriteLn('');
+  WriteLn('For a more accessible experience, the GitHub CLI can provide a similar experience using');
+  WriteLn('non-interactive prompts for user input.');
+  WriteLn('');
+  WriteLn('To enable this experience, use one of the following methods:');
+  WriteLn('- Run `gh config set accessible_prompter enabled`');
+  WriteLn('- Set `GH_ACCESSIBLE_PROMPTER=enabled` environment variable');
+  WriteLn('');
+  WriteLn('Text-based spinners');
+  WriteLn('');
+  WriteLn('Motion-based spinners communicate in-progress activity by manipulating the');
+  WriteLn('terminal cursor to create a spinning effect, which may cause discomfort to users');
+  WriteLn('with motion sensitivity or miscommunicate information to speech synthesizers.');
+  WriteLn('');
+  WriteLn('For a more accessible experience, this interactivity can be disabled in favor');
+  WriteLn('of text-based progress indicators.');
+  WriteLn('');
+  WriteLn('To enable this experience, use one of the following methods:');
+  WriteLn('- Run `gh config set spinner disabled`');
+  WriteLn('- Set `GH_SPINNER_DISABLED=yes` environment variable');
+  WriteLn('');
+  WriteLn('Join the conversation');
+  WriteLn('');
+  WriteLn('We invite you to join us in improving GitHub CLI accessibility by sharing your');
+  WriteLn('feedback and ideas through GitHub Accessibility feedback channels:');
+  WriteLn('');
+  WriteLn('https://accessibility.github.com/conformance/cli/');
+  WriteLn('');
+  WriteLn('');
+  WriteLn('USAGE');
+  WriteLn('  gh accessibility [flags]');
+  WriteLn('');
+  WriteLn('ALIASES');
+  WriteLn('  gh a11y');
+  WriteLn('');
+  WriteLn('FLAGS');
+  WriteLn('  -w, --web   Open the GitHub Accessibility site in your browser');
+  WriteLn('');
+  WriteLn('INHERITED FLAGS');
+  WriteLn('  --help   Show help for command');
+  WriteLn('');
+  WriteLn('EXAMPLES');
+  WriteLn('  # Open the GitHub Accessibility site in your browser');
+  WriteLn('  $ gh accessibility --web');
+  WriteLn('  ');
+  WriteLn('  # Display color using customizable, 4-bit accessible colors');
+  WriteLn('  $ gh config set accessible_colors enabled');
+  WriteLn('  ');
+  WriteLn('  # Use input prompts without redrawing the screen');
+  WriteLn('  $ gh config set accessible_prompter enabled');
+  WriteLn('  ');
+  WriteLn('  # Disable motion-based spinners for progress indicators in favor of text');
+  WriteLn('  $ gh config set spinner disabled');
+  WriteLn('');
+  WriteLn('LEARN MORE');
+  WriteLn('  Use `gh <command> <subcommand> --help` for more information about a command.');
+  WriteLn('  Read the manual at https://cli.github.com/manual');
+  WriteLn('  Learn about exit codes using `gh help exit-codes`');
+  WriteLn('  Learn about accessibility experiences using `gh help accessibility`');
+ End
+ Else If T='actions' Then Begin
+  WriteLn('Welcome to GitHub Actions on the command line.');
+  WriteLn('');
+  WriteLn('GitHub CLI integrates with GitHub Actions to help you manage runs and workflows.');
+  WriteLn('');
+  WriteLn('Interacting with workflow runs');
+  WriteLn('gh run list:      List recent workflow runs');
+  WriteLn('gh run view:      View details for a workflow run or one of its jobs');
+  WriteLn('gh run watch:     Watch a workflow run while it executes');
+  WriteLn('gh run rerun:     Rerun a failed workflow run');
+  WriteLn('gh run download:  Download artifacts generated by runs');
+  WriteLn('');
+  WriteLn('To see more help, run `gh help run <subcommand>`');
+  WriteLn('');
+  WriteLn('Interacting with workflow files');
+  WriteLn('gh workflow list:     List workflow files in your repository');
+  WriteLn('gh workflow view:     View details for a workflow file');
+  WriteLn('gh workflow enable:   Enable a workflow file');
+  WriteLn('gh workflow disable:  Disable a workflow file');
+  WriteLn('gh workflow run:      Trigger a workflow_dispatch run for a workflow file');
+  WriteLn('');
+  WriteLn('To see more help, run `gh help workflow <subcommand>`');
+  WriteLn('');
+  WriteLn('Interacting with the GitHub Actions cache');
+  WriteLn('gh cache list:    List all the caches saved in GitHub Actions for a repository');
+  WriteLn('gh cache delete:  Delete one or all saved caches in GitHub Actions for a repository');
+  WriteLn('');
+  WriteLn('To see more help, run `gh help cache <subcommand>`');
+  WriteLn('');
+  WriteLn('');
+  WriteLn('');
+  WriteLn('USAGE');
+  WriteLn('  gh actions [flags]');
+  WriteLn('');
+  WriteLn('INHERITED FLAGS');
+  WriteLn('  --help   Show help for command');
+  WriteLn('');
+  WriteLn('LEARN MORE');
+  WriteLn('  Use `gh <command> <subcommand> --help` for more information about a command.');
+  WriteLn('  Read the manual at https://cli.github.com/manual');
+  WriteLn('  Learn about exit codes using `gh help exit-codes`');
+  WriteLn('  Learn about accessibility experiences using `gh help accessibility`');
+ End
+ Else If T='environment' Then Begin
+  WriteLn('`GH_TOKEN`, `GITHUB_TOKEN` (in order of precedence): an authentication token that will be used when');
+  WriteLn('a command targets either `github.com` or a subdomain of `ghe.com`. Setting this avoids being prompted to');
+  WriteLn('authenticate and takes precedence over previously stored credentials.');
+  WriteLn('');
+  WriteLn('`GH_ENTERPRISE_TOKEN`, `GITHUB_ENTERPRISE_TOKEN` (in order of precedence): an authentication');
+  WriteLn('token that will be used when a command targets a GitHub Enterprise Server host.');
+  WriteLn('');
+  WriteLn('`GH_HOST`: specify the GitHub hostname for commands where a hostname has not been provided, or');
+  WriteLn('cannot be inferred from the context of a local Git repository. If this host was previously');
+  WriteLn('authenticated with, the stored credentials will be used. Otherwise, setting `GH_TOKEN` or');
+  WriteLn('`GH_ENTERPRISE_TOKEN` is required, depending on the targeted host.');
+  WriteLn('');
+  WriteLn('`GH_REPO`: specify the GitHub repository in the `[HOST/]OWNER/REPO` format for commands');
+  WriteLn('that otherwise operate on a local repository.');
+  WriteLn('');
+  WriteLn('`GH_EDITOR`, `GIT_EDITOR`, `VISUAL`, `EDITOR` (in order of precedence): the editor tool to use');
+  WriteLn('for authoring text.');
+  WriteLn('');
+  WriteLn('`GH_BROWSER`, `BROWSER` (in order of precedence): the web browser to use for opening links.');
+  WriteLn('');
+  WriteLn('`GH_DEBUG`: set to a truthy value to enable verbose output on standard error. Set to `api`');
+  WriteLn('to additionally log details of HTTP traffic.');
+  WriteLn('');
+  WriteLn('`DEBUG` (deprecated): set to `1`, `true`, or `yes` to enable verbose output on standard');
+  WriteLn('error.');
+  WriteLn('');
+  WriteLn('`GH_PAGER`, `PAGER` (in order of precedence): a terminal paging program to send standard output');
+  WriteLn('to, e.g. `less`.');
+  WriteLn('');
+  WriteLn('`GLAMOUR_STYLE`: the style to use for rendering Markdown. See');
+  WriteLn('<https://github.com/charmbracelet/glamour#styles>');
+  WriteLn('');
+  WriteLn('`NO_COLOR`: set to any value to avoid printing ANSI escape sequences for color output.');
+  WriteLn('');
+  WriteLn('`CLICOLOR`: set to `0` to disable printing ANSI colors in output.');
+  WriteLn('');
+  WriteLn('`CLICOLOR_FORCE`: set to a value other than `0` to keep ANSI colors in output');
+  WriteLn('even when the output is piped.');
+  WriteLn('');
+  WriteLn('`GH_COLOR_LABELS`: set to any value to display labels using their RGB hex color codes in terminals that');
+  WriteLn('support truecolor.');
+  WriteLn('');
+  WriteLn('`GH_ACCESSIBLE_COLORS` (preview): set to a truthy value to use customizable, 4-bit accessible colors.');
+  WriteLn('');
+  WriteLn('`GH_FORCE_TTY`: set to any value to force terminal-style output even when the output is');
+  WriteLn('redirected. When the value is a number, it is interpreted as the number of columns');
+  WriteLn('available in the viewport. When the value is a percentage, it will be applied against');
+  WriteLn('the number of columns available in the current viewport.');
+  WriteLn('');
+  WriteLn('`GH_NO_UPDATE_NOTIFIER`: set to any value to disable GitHub CLI update notifications.');
+  WriteLn('When any command is executed, gh checks for new versions once every 24 hours.');
+  WriteLn('If a newer version was found, an upgrade notice is displayed on standard error.');
+  WriteLn('');
+  WriteLn('`GH_NO_EXTENSION_UPDATE_NOTIFIER`: set to any value to disable GitHub CLI extension update notifications.');
+  WriteLn('When an extension is executed, gh checks for new versions for the executed extension once every 24 hours.');
+  WriteLn('If a newer version was found, an upgrade notice is displayed on standard error.');
+  WriteLn('');
+  WriteLn('`GH_CONFIG_DIR`: the directory where gh will store configuration files. If not specified,');
+  WriteLn('the default value will be one of the following paths (in order of precedence):');
+  WriteLn('  - `$XDG_CONFIG_HOME/gh` (if `$XDG_CONFIG_HOME` is set),');
+  WriteLn('  - `$AppData/GitHub CLI` (on Windows if `$AppData` is set), or');
+  WriteLn('  - `$HOME/.config/gh`.');
+  WriteLn('');
+  WriteLn('`GH_PROMPT_DISABLED`: set to any value to disable interactive prompting in the terminal.');
+  WriteLn('');
+  WriteLn('`GH_PATH`: set the path to the gh executable, useful for when gh can not properly determine');
+  WriteLn('its own path such as in the cygwin terminal.');
+  WriteLn('');
+  WriteLn('`GH_MDWIDTH`: default maximum width for markdown render wrapping.  The max width of lines');
+  WriteLn('wrapped on the terminal will be taken as the lesser of the terminal width, this value, or 120 if');
+  WriteLn('not specified.  This value is used, for example, with `pr view` subcommand.');
+  WriteLn('');
+  WriteLn('`GH_ACCESSIBLE_PROMPTER` (preview): set to a truthy value to enable prompts that are');
+  WriteLn('more compatible with speech synthesis and braille screen readers.');
+  WriteLn('');
+  WriteLn('`GH_SPINNER_DISABLED`: set to a truthy value to replace the spinner animation with');
+  WriteLn('a textual progress indicator.');
+ End
+ Else If T='exit-codes' Then Begin
+  WriteLn('gh follows normal conventions regarding exit codes.');
+  WriteLn('');
+  WriteLn('- If a command completes successfully, the exit code will be 0');
+  WriteLn('');
+  WriteLn('- If a command fails for any reason, the exit code will be 1');
+  WriteLn('');
+  WriteLn('- If a command is running but gets cancelled, the exit code will be 2');
+  WriteLn('');
+  WriteLn('- If a command requires authentication, the exit code will be 4');
+  WriteLn('');
+  WriteLn('NOTE: It is possible that a particular command may have more exit codes, so it is a good');
+  WriteLn('practice to check documentation for the command if you are relying on exit codes to');
+  WriteLn('control some behavior.');
+ End
+ Else If T='formatting' Then Begin
+  WriteLn('By default, the result of `gh` commands are output in line-based plain text format.');
+  WriteLn('Some commands support passing the `--json` flag, which converts the output to JSON format.');
+  WriteLn('Once in JSON, the output can be further formatted according to a required formatting string by');
+  WriteLn('adding either the `--jq` or `--template` flag. This is useful for selecting a subset of data,');
+  WriteLn('creating new data structures, displaying the data in a different format, or as input to another');
+  WriteLn('command line script.');
+  WriteLn('');
+  WriteLn('The `--json` flag requires a comma separated list of fields to fetch. To view the possible JSON');
+  WriteLn('field names for a command omit the string argument to the `--json` flag when you run the command.');
+  WriteLn('Note that you must pass the `--json` flag and field names to use the `--jq` or `--template` flags.');
+  WriteLn('');
+  WriteLn('The `--jq` flag requires a string argument in jq query syntax, and will only print');
+  WriteLn('those JSON values which match the query. jq queries can be used to select elements from an');
+  WriteLn('array, fields from an object, create a new array, and more. The `jq` utility does not need');
+  WriteLn('to be installed on the system to use this formatting directive. When connected to a terminal,');
+  WriteLn('the output is automatically pretty-printed. To learn about jq query syntax, see:');
+  WriteLn('<https://jqlang.github.io/jq/manual/>');
+  WriteLn('');
+  WriteLn('The `--template` flag requires a string argument in Go template syntax, and will only print');
+  WriteLn('those JSON values which match the query.');
+  WriteLn('');
+  WriteLn('In addition to the Go template functions in the standard library, the following functions can be used');
+  WriteLn('with this formatting directive:');
+  WriteLn('- `autocolor`: like `color`, but only emits color to terminals');
+  WriteLn('- `color <style> <input>`: colorize input using <https://github.com/mgutz/ansi>');
+  WriteLn('- `join <sep> <list>`: joins values in the list using a separator');
+  WriteLn('- `pluck <field> <list>`: collects values of a field from all items in the input');
+  WriteLn('- `tablerow <fields>...`: aligns fields in output vertically as a table');
+  WriteLn('- `tablerender`: renders fields added by tablerow in place');
+  WriteLn('- `timeago <time>`: renders a timestamp as relative to now');
+  WriteLn('- `timefmt <format> <time>`: formats a timestamp using Go''s `Time.Format` function');
+  WriteLn('- `truncate <length> <input>`: ensures input fits within length');
+  WriteLn('- `hyperlink <url> <text>`: renders a terminal hyperlink');
+  WriteLn('');
+  WriteLn('The following Sprig template library functions can also be used with this formatting directive:');
+  WriteLn('- `contains <arg> <string>`: checks if `string` contains `arg`');
+  WriteLn('- `hasPrefix <prefix> <string>`: checks if `string` starts with `prefix`');
+  WriteLn('- `hasSuffix <suffix> <string>`: checks if `string` ends with `suffix`');
+  WriteLn('- `regexMatch <regex> <string>`: checks if `string` has any matches for `regex`');
+  WriteLn('');
+  WriteLn('For more information about the Sprig library, see <https://masterminds.github.io/sprig/>.');
+  WriteLn('');
+  WriteLn('To learn more about Go templates, see: <https://golang.org/pkg/text/template/>.');
+  WriteLn('');
+  WriteLn('');
+  WriteLn('EXAMPLES');
+  WriteLn('  # Default output format');
+  WriteLn('  $ gh pr list');
+  WriteLn('  Showing 23 of 23 open pull requests in cli/cli');
+  WriteLn('  ');
+  WriteLn('  #123  A helpful contribution          contribution-branch              about 1 day ago');
+  WriteLn('  #124  Improve the docs                docs-branch                      about 2 days ago');
+  WriteLn('  #125  An exciting new feature         feature-branch                   about 2 days ago');
+  WriteLn('  ');
+  WriteLn('  ');
+  WriteLn('  # Adding the --json flag with a list of field names');
+  WriteLn('  $ gh pr list --json number,title,author');
+  WriteLn('  [');
+  WriteLn('    {');
+  WriteLn('      "author": {');
+  WriteLn('        "login": "monalisa"');
+  WriteLn('      },');
+  WriteLn('      "number": 123,');
+  WriteLn('      "title": "A helpful contribution"');
+  WriteLn('    },');
+  WriteLn('    {');
+  WriteLn('      "author": {');
+  WriteLn('        "login": "codercat"');
+  WriteLn('      },');
+  WriteLn('      "number": 124,');
+  WriteLn('      "title": "Improve the docs"');
+  WriteLn('    },');
+  WriteLn('    {');
+  WriteLn('      "author": {');
+  WriteLn('        "login": "cli-maintainer"');
+  WriteLn('      },');
+  WriteLn('      "number": 125,');
+  WriteLn('      "title": "An exciting new feature"');
+  WriteLn('    }');
+  WriteLn('  ]');
+  WriteLn('  ');
+  WriteLn('  ');
+  WriteLn('  # Adding the --jq flag and selecting fields from the array');
+  WriteLn('  $ gh pr list --json author --jq ''.[].author.login''');
+  WriteLn('  monalisa');
+  WriteLn('  codercat');
+  WriteLn('  cli-maintainer');
+  WriteLn('  ');
+  WriteLn('  ');
+  WriteLn('  # --jq can be used to implement more complex filtering and output changes');
+  WriteLn('  $ gh issue list --json number,title,labels --jq \');
+  WriteLn('    ''map(select((.labels | length) > 0))    # must have labels');
+  WriteLn('    | map(.labels = (.labels | map(.name))) # show only the label names');
+  WriteLn('    | .[:3]                                 # select the first 3 results''');
+  WriteLn('    [');
+  WriteLn('      {');
+  WriteLn('        "labels": [');
+  WriteLn('          "enhancement",');
+  WriteLn('          "needs triage"');
+  WriteLn('        ],');
+  WriteLn('        "number": 123,');
+  WriteLn('        "title": "A helpful contribution"');
+  WriteLn('      },');
+  WriteLn('      {');
+  WriteLn('        "labels": [');
+  WriteLn('          "help wanted",');
+  WriteLn('          "docs",');
+  WriteLn('          "good first issue"');
+  WriteLn('        ],');
+  WriteLn('        "number": 125,');
+  WriteLn('        "title": "Improve the docs"');
+  WriteLn('      },');
+  WriteLn('      {');
+  WriteLn('        "labels": [');
+  WriteLn('          "enhancement",');
+  WriteLn('        ],');
+  WriteLn('        "number": 7221,');
+  WriteLn('        "title": "An exciting new feature"');
+  WriteLn('      }');
+  WriteLn('    ]');
+  WriteLn('  ');
+  WriteLn('  ');
+  WriteLn('  # Using the --template flag with the hyperlink helper');
+  WriteLn('  $ gh issue list --json title,url --template ''{{range .}}{{hyperlink .url .title}}{{"\n"}}{{end}}''');
+  WriteLn('  ');
+  WriteLn('  ');
+  WriteLn('  # Adding the --template flag and modifying the display format');
+  WriteLn('  $ gh pr list --json number,title,headRefName,updatedAt --template \');
+  Write('  	''{{range .}}{{tablerow (printf "#%v" .number | autocolor "green") .title .headRefName (timeago'+
+   ' .updatedAt)}}{{end}}''');WriteLn;
+  WriteLn('  ');
+  WriteLn('  #123  A helpful contribution      contribution-branch       about 1 day ago');
+  WriteLn('  #124  Improve the docs            docs-branch               about 2 days ago');
+  WriteLn('  #125  An exciting new feature     feature-branch            about 2 days ago');
+  WriteLn('  ');
+  WriteLn('  ');
+  Write('  # A more complex example with the --template flag which formats a pull request using multiple'+
+   ' tables with headers');WriteLn;
+  WriteLn('  $ gh pr view 3519 --json number,title,body,reviews,assignees --template \');
+  WriteLn('  ''{{printf "#%v" .number}} {{.title}}');
+  WriteLn('  ');
+  WriteLn('  {{.body}}');
+  WriteLn('  ');
+  WriteLn('  {{tablerow "ASSIGNEE" "NAME"}}{{range .assignees}}{{tablerow .login .name}}{{end}}{{tablerender}}');
+  WriteLn('  {{tablerow "REVIEWER" "STATE" "COMMENT"}}{{range .reviews}}{{tablerow .author.login .state .body}}{{end}}');
+  WriteLn('  ''');
+  WriteLn('  ');
+  WriteLn('  #3519 Add table and helper template functions');
+  WriteLn('  ');
+  WriteLn('  Resolves #3488');
+  WriteLn('  ');
+  WriteLn('  ASSIGNEE  NAME');
+  WriteLn('  mislav    Mislav Marohni'+#196+#135+'');
+  WriteLn('  ');
+  WriteLn('  ');
+  WriteLn('  REVIEWER  STATE              COMMENT');
+  WriteLn('  mislav    COMMENTED          This is going along great! Thanks for working on this '+#226+#157+#164+''+#239+#184+#143+'');
+  WriteLn('  ');
+ End
+ Else If T='mintty' Then Begin
+  WriteLn('MinTTY is the terminal emulator that comes by default with Git');
+  WriteLn('for Windows. It has known issues with gh''s ability to prompt a');
+  WriteLn('user for input.');
+  WriteLn('');
+  WriteLn('There are a few workarounds to make gh work with MinTTY:');
+  WriteLn('');
+  WriteLn('- Reinstall Git for Windows, checking "Enable experimental support for pseudo consoles".');
+  WriteLn('');
+  WriteLn('- Use a different terminal emulator with Git for Windows like Windows Terminal.');
+  WriteLn('  You can run `C:\Program Files\Git\bin\bash.exe` from any terminal emulator to continue');
+  WriteLn('  using all of the tooling in Git For Windows without MinTTY.');
+  WriteLn('');
+  WriteLn('- Prefix invocations of gh with `winpty`, eg: `winpty gh auth login`.');
+  WriteLn('  NOTE: this can lead to some UI bugs.');
+ End
+;
+End;
+{ ------------------------------------------------------------------ }
+{ Aide generale, groupes de commandes, distribution                    }
 { ------------------------------------------------------------------ }
 
 Type
@@ -16877,41 +17802,212 @@ Type
   P:AnsiString;
   F:TProc;
  End;
+ TGrp = Record
+  P,Intro,Gen,Alias,Args,Ex:AnsiString;
+  R:Boolean;
+ End;
+
+Const
+ NGrp=29;
+ Grps:Array[0..NGrp-1]of TGrp=(
+  (P:'agent-task';Intro:'Work with agent tasks (preview)@@Travaille avec les t'+#131+'ches d''agent (aper'+#135+'u)';
+   Gen:'';Alias:'gh agent-tasks, gh agent, gh agents';Args:'';Ex:'';R:False),
+  (P:'alias';Intro:'Aliases can be used to make shortcuts for gh commands or to compose multiple commands.'#10#10+
+   'Run `gh help alias set` to learn more.@@Les alias permettent de cr'+#130+'er des raccourcis pour les commandes gh ou '+
+   'de composer plusieurs commandes.'#10#10'Ex'+#130+'cutez `gh help alias set` pour en savoir plus.';
+   Gen:'';Alias:'';Args:'';Ex:'';R:False),
+  (P:'attestation';Intro:'Download and verify artifact attestations.@@T'+#130+'l'+#130+'charge et v'+#130+'rifie les attestations d''artefacts.';
+   Gen:'';Alias:'gh at';Args:'';Ex:'';R:False),
+  (P:'auth';Intro:'Authenticate gh and git with GitHub@@Authentifie gh et git aupr'+#138+'s de GitHub';
+   Gen:'';Alias:'';Args:'';Ex:'';R:False),
+  (P:'cache';Intro:'Work with GitHub Actions caches.@@Travaille avec les caches de GitHub Actions.';
+   Gen:'';Alias:'';Args:'';Ex:'$ gh cache list|$ gh cache delete --all';R:True),
+  (P:'codespace';Intro:'Connect to and manage codespaces@@Se connecte aux codespaces et les g'+#138+'re';
+   Gen:'';Alias:'gh cs';Args:'';Ex:'';R:False),
+  (P:'config';Intro:'Display or change configuration settings for gh.'#10#10'Current respected settings:'#10+
+   '- `git_protocol`: the protocol to use for git clone and push operations `{https | ssh}` (default `https`)'#10+
+   '- `editor`: the text editor program to use for authoring text'#10+
+   '- `prompt`: toggle interactive prompting in the terminal `{enabled | disabled}` (default `enabled`)'#10+
+   '- `pager`: the terminal pager program to send standard output to'#10+
+   '- `http_unix_socket`: the path to a Unix socket through which to make an HTTP connection'#10+
+   '- `browser`: the web browser to use for opening URLs'#10+
+   '- `color_labels`: whether to display labels using their RGB hex color codes in terminals that support truecolor `{enabled | disabled}` (default `disabled`)'#10+
+   '- `accessible_colors`: whether customizable, 4-bit accessible colors should be used `{enabled | disabled}` (default `disabled`)'#10+
+   '- `accessible_prompter`: whether an accessible prompter should be used `{enabled | disabled}` (default `disabled`)'#10+
+   '- `spinner`: whether to use a animated spinner as a progress indicator `{enabled | disabled}` (default `enabled`)'+
+   '@@Affiche ou modifie les param'+#138+'tres de configuration de gh.'#10#10'Param'+#138+'tres respect'+#130+'s actuellement :'#10+
+   '- `git_protocol` : le protocole utilis'+#130+' pour les op'+#130+'rations git clone et push `{https | ssh}` (d'+#130+'faut `https`)'#10+
+   '- `editor` : le programme d'''+#130+'dition de texte'#10+
+   '- `prompt` : active ou d'+#130+'sactive les invites interactives `{enabled | disabled}` (d'+#130+'faut `enabled`)'#10+
+   '- `pager` : le programme de pagination du terminal'#10+
+   '- `http_unix_socket` : le chemin d''un socket Unix pour les connexions HTTP'#10+
+   '- `browser` : le navigateur utilis'+#130+' pour ouvrir les URL'#10+
+   '- `color_labels` : affiche les '+#130+'tiquettes avec leur couleur RGB `{enabled | disabled}` (d'+#130+'faut `disabled`)'#10+
+   '- `accessible_colors` : utilise des couleurs accessibles `{enabled | disabled}` (d'+#130+'faut `disabled`)'#10+
+   '- `accessible_prompter` : utilise des invites accessibles `{enabled | disabled}` (d'+#130+'faut `disabled`)'#10+
+   '- `spinner` : utilise des indicateurs anim'+#130+'s `{enabled | disabled}` (d'+#130+'faut `enabled`)';
+   Gen:'';Alias:'';Args:'';Ex:'';R:False),
+  (P:'extension';Intro:'GitHub CLI extensions are repositories that provide additional gh commands.'#10#10+
+   'The name of the extension repository must start with `gh-` and it must contain an'#10+
+   'executable of the same name. All arguments passed to the `gh <extname>` invocation'#10+
+   'will be forwarded to the `gh-<extname>` executable of the extension.'#10#10+
+   'An extension cannot override any of the core gh commands. If an extension name conflicts'#10+
+   'with a core gh command, you can use `gh extension exec <extname>`.'#10#10+
+   'For the list of available extensions, see <https://github.com/topics/gh-extension>.@@Les extensions de GitHub CLI sont '+
+   'des d'+#130+'p'+#147+'ts qui fournissent des commandes gh suppl'+#130+'mentaires.'#10#10+
+   'Le nom du d'+#130+'p'+#147+'t de l''extension doit commencer par `gh-` et contenir un ex'+#130+'cutable du m'+#136+'me nom. '+
+   'Tous les arguments de `gh <nom>` sont transmis '+#133+' l''ex'+#130+'cutable `gh-<nom>`.'#10#10+
+   'Une extension ne peut pas remplacer une commande de base de gh. En cas de conflit, utilisez '+
+   '`gh extension exec <nom>`.'#10#10'Liste des extensions : <https://github.com/topics/gh-extension>.';
+   Gen:'';Alias:'gh extensions, gh ext';Args:'';Ex:'';R:False),
+  (P:'gist';Intro:'Work with GitHub gists.@@Travaille avec les gists GitHub.';Gen:'';Alias:'';
+   Args:'A gist can be supplied as argument in either of the following formats:|- by ID, e.g. 5b0e0062eb8e9654adad7bb1d81cc75f|- by URL, e.g. "https://gist.github.com/OWNER/5b0e0062eb8e9654adad7bb1d81cc75f"@@Un gist peut '+#136+'tre fourni en argument dans l''un des formats suivants :|- par identifiant, ex. : 5b0e0062eb8e9654adad7bb1d81cc75f|- par URL, ex. : "https://gist.github.com/PROPRIETAIRE/5b0e0062eb8e9654adad7bb1d81cc75f"';
+   Ex:'';R:False),
+  (P:'gpg-key';Intro:'Manage GPG keys registered with your GitHub account.@@G'+#138+'re les cl'+#130+'s GPG enregistr'+#130+'es dans votre compte GitHub.';
+   Gen:'';Alias:'';Args:'';Ex:'';R:False),
+  (P:'issue';Intro:'Work with GitHub issues.@@Travaille avec les tickets GitHub.';Gen:'create,list,status';Alias:'';
+   Args:'An issue can be supplied as argument in any of the following formats:|- by number, e.g. "123"; or|- by URL, e.g. "https://github.com/OWNER/REPO/issues/123".@@Un ticket peut '+#136+'tre fourni en argument dans l''un des formats suivants :|- par num'+#130+'ro, ex. : "123"; ou|- par URL, ex. : "https://github.com/PROPRIETAIRE/DEPOT/issues/123".';
+   Ex:'$ gh issue list|$ gh issue create --label bug|$ gh issue view 123 --web';R:True),
+  (P:'label';Intro:'Work with GitHub labels.@@Travaille avec les '+#130+'tiquettes GitHub.';Gen:'';Alias:'';Args:'';Ex:'';R:True),
+  (P:'org';Intro:'Work with GitHub organizations.@@Travaille avec les organisations GitHub.';Gen:'list';Alias:'';Args:'';
+   Ex:'$ gh org list';R:False),
+  (P:'pr';Intro:'Work with GitHub pull requests.@@Travaille avec les pull requests GitHub.';Gen:'create,list,status';Alias:'';
+   Args:'A pull request can be supplied as argument in any of the following formats:|- by number, e.g. "123";|- by URL, e.g. "https://github.com/OWNER/REPO/pull/123"; or|- by the name of its head branch, e.g. "patch-1" or "OWNER:patch-1".@@Une pull request peut '+#136+'tre fournie en argument dans l''un des formats suivants :|- par num'+#130+'ro, ex. : "123";|- par URL, ex. : "https://github.com/PROPRIETAIRE/DEPOT/pull/123"; ou|- par le nom de sa branche source, ex. : "patch-1" ou "PROPRIETAIRE:patch-1".';
+   Ex:'$ gh pr checkout 353|$ gh pr create --fill|$ gh pr view --web';R:True),
+  (P:'preview';Intro:'Preview commands are for testing, demonstrative, and development purposes only.'#10+
+   'They should be considered unstable and can change at any time.@@Les commandes d''aper'+#135+'u servent aux essais, '+
+   'aux d'+#130+'monstrations et au d'+#130+'veloppement. Elles sont instables et peuvent changer '+#133+' tout moment.';
+   Gen:'';Alias:'';Args:'';Ex:'';R:False),
+  (P:'project';Intro:'Work with GitHub Projects.'#10#10'The minimum required scope for the token is: `project`.'#10+
+   'You can verify your token scope by running `gh auth status` and'#10+
+   'add the `project` scope by running `gh auth refresh -s project`.@@Travaille avec les projets GitHub.'#10#10+
+   'La port'+#130+'e minimale requise pour le jeton est : `project`.'#10+
+   'V'+#130+'rifiez la port'+#130+'e avec `gh auth status` et ajoutez `project` avec `gh auth refresh -s project`.';
+   Gen:'';Alias:'';Args:'';
+   Ex:'$ gh project create --owner monalisa --title "Roadmap"|$ gh project view 1 --owner cli --web|$ gh project field-list 1 --owner cli|$ gh project item-list 1 --owner cli';
+   R:False),
+  (P:'release';Intro:'Manage releases@@G'+#138+'re les versions publi'+#130+'es';Gen:'create,list';Alias:'';Args:'';Ex:'';R:True),
+  (P:'repo';Intro:'Work with GitHub repositories.@@Travaille avec les d'+#130+'p'+#147+'ts GitHub.';Gen:'create,list';Alias:'';
+   Args:'A repository can be supplied as an argument in any of the following formats:|- "OWNER/REPO"|- by URL, e.g. "https://github.com/OWNER/REPO"@@Un d'+#130+'p'+#147+'t peut '+#136+'tre fourni en argument dans l''un des formats suivants :|- "PROPRIETAIRE/DEPOT"|- par URL, ex. : "https://github.com/PROPRIETAIRE/DEPOT"';
+   Ex:'$ gh repo create|$ gh repo clone cli/cli|$ gh repo view --web';R:False),
+  (P:'repo autolink';Intro:'Autolinks link issues, pull requests, commit messages, and release descriptions to external third-party services.'#10#10+
+   'Autolinks require `admin` role to view or manage.@@Les r'+#130+'f'+#130+'rences automatiques (autolinks) relient les tickets, '+
+   'pull requests, messages de commit et descriptions de versions '+#133+' des services tiers externes.'#10#10+
+   'Elles exigent le r'+#147+'le `admin` pour '+#136+'tre consult'+#130+'es ou g'+#130+'r'+#130+'es.';Gen:'';Alias:'';Args:'';Ex:'';R:True),
+  (P:'repo deploy-key';Intro:'Manage deploy keys in a repository@@G'+#138+'re les cl'+#130+'s de d'+#130+'ploiement d''un d'+#130+'p'+#147+'t';Gen:'';Alias:'';
+   Args:'';Ex:'';R:True),
+  (P:'repo gitignore';Intro:'List and view available repository gitignore templates@@Liste et affiche les mod'+#138+'les .gitignore disponibles';
+   Gen:'';Alias:'';Args:'';Ex:'';R:False),
+  (P:'repo license';Intro:'Explore repository licenses@@Explore les licences de d'+#130+'p'+#147+'t';Gen:'';Alias:'';Args:'';Ex:'';R:False),
+  (P:'ruleset';Intro:'Repository rulesets are a way to define a set of rules that apply to a repository.'#10+
+   'These commands allow you to view information about them.@@Les ensembles de r'+#138+'gles de d'+#130+'p'+#147+'t d'+#130+'finissent des r'+#138+'gles '+
+   'qui s''appliquent '+#133+' un d'+#130+'p'+#147+'t. Ces commandes permettent d''en consulter les informations.';
+   Gen:'';Alias:'gh rs';Args:'';Ex:'$ gh ruleset list|$ gh ruleset view --repo OWNER/REPO --web|$ gh ruleset check branch-name';R:True),
+  (P:'run';Intro:'List, view, and watch recent workflow runs from GitHub Actions.@@Liste, affiche et surveille les ex'+#130+'cutions '+
+   'r'+#130+'centes de workflows de GitHub Actions.';Gen:'';Alias:'';Args:'';Ex:'';R:True),
+  (P:'search';Intro:'Search across all of GitHub.@@Recherche dans tout GitHub.'#10#10+
+   'To exclude results with a qualifier, prefix it with a hyphen (e.g. `-label:bug`) and put `--` before the query:'#10+
+   '  $ gh search issues -- "my-query -label:bug"';Gen:'';Alias:'';Args:'';Ex:'';R:False),
+  (P:'secret';Intro:'Secrets can be set at the repository, or organization level for use in'#10+
+   'GitHub Actions or Dependabot. User, organization, and repository secrets can be set for'#10+
+   'use in GitHub Codespaces. Environment secrets can be set for use in'#10+
+   'GitHub Actions. Run `gh help secret set` to learn how to get started.@@Les secrets peuvent '+#136+'tre d'+#130+'finis au niveau '+
+   'du d'+#130+'p'+#147+'t ou de l''organisation pour GitHub Actions ou Dependabot, et au niveau de l''utilisateur, de l''organisation '+
+   'ou du d'+#130+'p'+#147+'t pour GitHub Codespaces. Ex'+#130+'cutez `gh help secret set` pour d'+#130+'buter.';Gen:'';Alias:'';Args:'';Ex:'';R:True),
+  (P:'ssh-key';Intro:'Manage SSH keys registered with your GitHub account.@@G'+#138+'re les cl'+#130+'s SSH enregistr'+#130+'es dans votre compte GitHub.';
+   Gen:'';Alias:'';Args:'';Ex:'';R:False),
+  (P:'variable';Intro:'Variables can be set at the repository, environment or organization level for use in'#10+
+   'GitHub Actions or Dependabot. Run `gh help variable set` to learn how to get started.@@Les variables peuvent '+#136+'tre '+
+   'd'+#130+'finies au niveau du d'+#130+'p'+#147+'t, de l''environnement ou de l''organisation pour GitHub Actions ou Dependabot. '+
+   'Ex'+#130+'cutez `gh help variable set` pour d'+#130+'buter.';Gen:'';Alias:'';Args:'';Ex:'';R:True),
+  (P:'workflow';Intro:'List, view, and run workflows in GitHub Actions.@@Liste, affiche et lance les workflows de GitHub Actions.';
+   Gen:'';Alias:'';Args:'';Ex:'';R:True));
+
+Procedure PrintLines(Const S:AnsiString;Const Indent:AnsiString);
+Var
+ L:TSList;
+ I:LongInt;
+Begin
+ SplitStr(S,'|',L);
+ For I:=0 to L.N-1 do WriteLn(Indent,L.A[I]);
+End;
 
 Procedure PrintGroupHelp(Const Path:AnsiString);
 Var
- I,W:LongInt;
- Subs:TSList;
- P:AnsiString;
+ I,W,K:LongInt;
+ Subs,Gen,Rest:TSList;
+ G:LongInt;
+ Intro:AnsiString;
+ Procedure PrintCmds(Const Title:AnsiString;Const L:TSList);
+ Var
+  J:LongInt;
+ Begin
+  If L.N=0 Then Exit;
+  WriteLn;
+  WriteLn(Title);
+  For J:=0 to L.N-1 do WriteLn('  ',PadR(L.A[J]+':',W+1),' ',DescOf(Path+' '+L.A[J]));
+ End;
 Begin
- WriteLn(DescOf(Path));
- WriteLn;
- WriteLn(Lg('USAGE','UTILISATION'));
- WriteLn('  gh ',Path,' <',Lg('command','commande'),'> [flags]');
- WriteLn;
+ G:=-1;
+ For I:=0 to NGrp-1 do If Grps[I].P=Path Then G:=I;
+ If G>=0 Then Intro:=Tx(Grps[G].Intro) Else Intro:=DescOf(Path);
+ WriteLn(Intro);
+ If(G>=0)and((Grps[G].P='codespace')or(Grps[G].P='extension'))Then Begin
+  WriteLn;
+  WriteLn(Lg('USAGE','UTILISATION'));
+  WriteLn('  gh ',Path,' [flags]');
+ End
+ Else If Path='attestation' Then Begin
+  WriteLn;WriteLn(Lg('USAGE','UTILISATION'));WriteLn('  gh attestation [subcommand] [flags]');
+ End
+ Else Begin
+  WriteLn;
+  WriteLn(Lg('USAGE','UTILISATION'));
+  WriteLn('  gh ',Path,' <',Lg('command','commande'),'> [flags]');
+ End;
+ If(G>=0)and(Grps[G].Alias<>'')Then Begin
+  WriteLn;
+  WriteLn(Lg('ALIASES','ALIAS'));
+  WriteLn('  ',Grps[G].Alias);
+ End;
  ListSubs(Path,Subs);
  SSort(Subs);
- WriteLn(Lg('AVAILABLE COMMANDS','COMMANDES DISPONIBLES'));
  W:=0;
  For I:=0 to Subs.N-1 do If Length(Subs.A[I])>W Then W:=Length(Subs.A[I]);
- For I:=0 to Subs.N-1 do
-  WriteLn('  ',PadR(Subs.A[I]+':',W+1),'  ',DescOf(Path+' '+Subs.A[I]));
- WriteLn;
- WriteLn(Lg('INHERITED FLAGS','OPTIONS H'+#144+'RIT'+#144+'ES'));
- WriteLn('      --help                     ',Lg('Show help for command','Affiche l''aide de la commande'));
- If(Path<>'config')and(Path<>'alias')and(Path<>'auth')and(Path<>'extension')and(Path<>'completion')Then
+ SClear(Gen);SClear(Rest);
+ If(G>=0)and(Grps[G].Gen<>'')Then Begin
+  SplitStr(Grps[G].Gen,',',Gen);
+  For I:=0 to Subs.N-1 do If SIndex(Gen,Subs.A[I])<0 Then SAdd(Rest,Subs.A[I]);
+  SSort(Gen);
+  PrintCmds(Lg('GENERAL COMMANDS','COMMANDES G'+#144+'N'+#144+'RALES'),Gen);
+  If Rest.N>0 Then PrintCmds(Lg('TARGETED COMMANDS','COMMANDES CIBL'+#144+'ES'),Rest);
+ End
+ Else PrintCmds(Lg('AVAILABLE COMMANDS','COMMANDES DISPONIBLES'),Subs);
+ If(G>=0)and Grps[G].R Then Begin
+  WriteLn;
+  WriteLn(Lg('FLAGS','OPTIONS'));
   WriteLn('  -R, --repo [HOST/]OWNER/REPO   ',Lg('Select another repository using the [HOST/]OWNER/REPO format',
     'S'+#130+'lectionne un autre d'+#130+'p'+#147+'t au format [H'+#195+#148+'TE/]PROPRI'+#144+'TAIRE/D'+#144+'P'+#195+#148+'T'));
+ End;
  WriteLn;
- WriteLn(Lg('LEARN MORE','EN SAVOIR PLUS'));
- WriteLn('  ',Lg('Use `gh <command> <subcommand> --help` for more information about a command.',
-   'Utilisez `gh <commande> <sous-commande> --help` pour plus d''informations sur une commande.'));
- WriteLn('  ',Lg('Read the manual at https://cli.github.com/manual','Lisez le manuel '+#133+' https://cli.github.com/manual'));
+ WriteLn(Lg('INHERITED FLAGS','OPTIONS H'+#144+'RIT'+#144+'ES'));
+ WriteLn('  --help   ',Lg('Show help for command','Affiche l''aide de la commande'));
+ If(G>=0)and(Grps[G].Args<>'')Then Begin
+  WriteLn;
+  WriteLn(Lg('ARGUMENTS','ARGUMENTS'));
+  PrintLines(Tx(Grps[G].Args),'  ');
+ End;
+ If(G>=0)and(Grps[G].Ex<>'')Then Begin
+  WriteLn;
+  WriteLn(Lg('EXAMPLES','EXEMPLES'));
+  PrintLines(Grps[G].Ex,'  ');
+ End;
+ PrintLearnMore;
 End;
 
 Procedure PrintCmdLine(Const Nm:AnsiString);
 Begin
- WriteLn('  ',PadR(Nm+':',13),DescOf(Nm));
+ WriteLn('  ',PadR(Nm+':',14),DescOf(Nm));
 End;
 
 Procedure PrintMainHelp;
@@ -16930,19 +18026,23 @@ Begin
  PrintCmdLine('cache');PrintCmdLine('run');PrintCmdLine('workflow');
  WriteLn;
  WriteLn(Lg('ALIAS COMMANDS','COMMANDES D''ALIAS'));
- WriteLn('  ',PadR('co:',13),Lg('Alias for "pr checkout"','Alias de "pr checkout"'));
+ WriteLn('  ',PadR('co:',14),Lg('Alias for "pr checkout"','Alias de "pr checkout"'));
  WriteLn;
  WriteLn(Lg('ADDITIONAL COMMANDS','COMMANDES SUPPL'+#144+'MENTAIRES'));
- PrintCmdLine('alias');PrintCmdLine('api');PrintCmdLine('completion');PrintCmdLine('config');
- PrintCmdLine('extension');PrintCmdLine('gpg-key');PrintCmdLine('label');PrintCmdLine('ruleset');
- PrintCmdLine('search');PrintCmdLine('secret');PrintCmdLine('ssh-key');PrintCmdLine('status');
- PrintCmdLine('variable');
+ PrintCmdLine('agent-task');PrintCmdLine('alias');PrintCmdLine('api');PrintCmdLine('attestation');
+ PrintCmdLine('completion');PrintCmdLine('config');PrintCmdLine('copilot');PrintCmdLine('extension');
+ PrintCmdLine('gpg-key');PrintCmdLine('label');PrintCmdLine('licenses');PrintCmdLine('preview');
+ PrintCmdLine('ruleset');PrintCmdLine('search');PrintCmdLine('secret');PrintCmdLine('ssh-key');
+ PrintCmdLine('status');PrintCmdLine('variable');
  WriteLn;
  WriteLn(Lg('HELP TOPICS','SUJETS D''AIDE'));
- WriteLn('  ',PadR('environment:',13),Lg('Environment variables that can be used with gh','Variables d''environnement utilisables avec gh'));
- WriteLn('  ',PadR('exit-codes:',13),Lg('Exit codes used by gh','Codes de sortie utilis'+#130+'s par gh'));
- WriteLn('  ',PadR('formatting:',13),Lg('Formatting options for JSON data exported from gh','Options de formatage des donn'+#130+'es JSON export'+#130+'es par gh'));
- WriteLn('  ',PadR('reference:',13),Lg('A comprehensive reference of all gh commands','R'+#130+'f'+#130+'rence compl'+#138+'te de toutes les commandes gh'));
+ WriteLn('  ',PadR('accessibility:',14),Lg('Learn about GitHub CLI''s accessibility experiences','Informations sur l''accessibilit'+#130+' de GitHub CLI'));
+ WriteLn('  ',PadR('actions:',14),Lg('Learn about working with GitHub Actions','Informations sur le travail avec GitHub Actions'));
+ WriteLn('  ',PadR('environment:',14),Lg('Environment variables that can be used with gh','Variables d''environnement utilisables avec gh'));
+ WriteLn('  ',PadR('exit-codes:',14),Lg('Exit codes used by gh','Codes de sortie utilis'+#130+'s par gh'));
+ WriteLn('  ',PadR('formatting:',14),Lg('Formatting options for JSON data exported from gh','Options de formatage des donn'+#130+'es JSON export'+#130+'es par gh'));
+ WriteLn('  ',PadR('mintty:',14),Lg('Information about using gh with MinTTY','Informations sur l''utilisation de gh avec MinTTY'));
+ WriteLn('  ',PadR('reference:',14),Lg('A comprehensive reference of all gh commands','R'+#130+'f'+#130+'rence compl'+#138+'te de toutes les commandes gh'));
  WriteLn;
  WriteLn(Lg('FLAGS','OPTIONS'));
  WriteLn('  --help      ',Lg('Show help for command','Affiche l''aide de la commande'));
@@ -16952,98 +18052,38 @@ Begin
  WriteLn('  $ gh issue create');
  WriteLn('  $ gh repo clone cli/cli');
  WriteLn('  $ gh pr checkout 321');
- WriteLn;
- WriteLn(Lg('LEARN MORE','EN SAVOIR PLUS'));
- WriteLn('  ',Lg('Use `gh <command> <subcommand> --help` for more information about a command.',
-   'Utilisez `gh <commande> <sous-commande> --help` pour plus d''informations sur une commande.'));
- WriteLn('  ',Lg('Read the manual at https://cli.github.com/manual','Lisez le manuel '+#133+' https://cli.github.com/manual'));
+ PrintLearnMore;
 End;
 
-Procedure PrintTopic(Const T:AnsiString);
+Procedure PrintReference;
 Var
- I:LongInt;
- Cmds:TSList;
- Subs:TSList;
- J:LongInt;
+ I,J:LongInt;
+ Cmds,Subs,Subs2:TSList;
+ K:LongInt;
+ Procedure One(Const P:AnsiString;Lvl:LongInt);
+ Begin
+  WriteLn;
+  WriteLn(StringOfChar('#',Lvl),' gh ',P);
+  WriteLn;
+  RunShell(Q(ParamStr(0))+' '+P+' --help');
+ End;
 Begin
- If T='environment' Then Begin
-  WriteLn('GH_TOKEN, GITHUB_TOKEN (in order of precedence): an authentication token that will be used when a command targets either github.com or a subdomain of ghe.com.');
-  WriteLn;
-  WriteLn('GH_ENTERPRISE_TOKEN, GITHUB_ENTERPRISE_TOKEN (in order of precedence): an authentication token for API requests to GitHub Enterprise.');
-  WriteLn;
-  WriteLn('GH_HOST: specify the GitHub hostname for commands where a hostname has not been provided, or cannot be inferred from the context of a local Git repository.');
-  WriteLn;
-  WriteLn('GH_REPO: specify the GitHub repository in the "[HOST/]OWNER/REPO" format for commands that otherwise operate on a local repository.');
-  WriteLn;
-  WriteLn('GH_EDITOR, GIT_EDITOR, VISUAL, EDITOR (in order of precedence): the editor tool to use for authoring text.');
-  WriteLn;
-  WriteLn('GH_BROWSER, BROWSER (in order of precedence): the web browser to use for opening links.');
-  WriteLn;
-  WriteLn('GH_CONFIG_DIR: the directory where gh will store configuration files.');
-  WriteLn;
-  WriteLn('GH_PROMPT_DISABLED: set to any value to disable interactive prompting in the terminal.');
-  WriteLn;
-  WriteLn('GH_FORCE_TTY: set to any value to force terminal-style output even when the output is redirected.');
-  WriteLn;
-  WriteLn('LANGUAGE: set to EN to display the help in English (French by default).');
- End
- Else If T='exit-codes' Then Begin
-  WriteLn('gh follows normal conventions regarding exit codes.');
-  WriteLn;
-  WriteLn('- If a command completes successfully, the exit code will be 0');
-  WriteLn;
-  WriteLn('- If a command fails for any reason, the exit code will be 1');
-  WriteLn;
-  WriteLn('- If a command is running but gets cancelled, the exit code will be 2');
-  WriteLn;
-  WriteLn('- If a command encounters an authentication issue, the exit code will be 4');
-  WriteLn;
-  WriteLn('NOTE: It is possible that a particular command may have more exit codes, so it is a good');
-  WriteLn('practice to check documentation for the command if you are relying on exit codes to');
-  WriteLn('control some behavior.');
- End
- Else If T='formatting' Then Begin
-  WriteLn('By default, the result of `gh` commands are output in line-based plain text format.');
-  WriteLn('Some commands support passing the `--json` flag, which converts the output to JSON format.');
-  WriteLn('Once in JSON, the output can be further formatted according to a required formatting string by');
-  WriteLn('adding either the `--jq` or `--template` flag. This is convenient for making the output of');
-  WriteLn('specific commands accessible to automation scripts or for other use cases.');
-  WriteLn;
-  WriteLn('For more information about jq, see https://jqlang.github.io/jq/manual/.');
-  WriteLn;
-  WriteLn('The `--template` flag accepts Go templates (https://golang.org/pkg/text/template/) with these');
-  WriteLn('additional functions: autocolor, color, join, pluck, tablerender, tablerow, timeago, timefmt,');
-  WriteLn('truncate, hyperlink.');
-  WriteLn;
-  WriteLn('Examples:');
-  WriteLn('  $ gh issue list --json number,title --jq ''.[] | "\(.number)\t\(.title)"''');
-  WriteLn('  $ gh pr list --json number,title --template ''{{range .}}{{tablerow .number .title}}{{end}}{{tablerender}}''');
- End
- Else If T='reference' Then Begin
-  WriteLn('# gh reference');
-  ListSubs('',Cmds);
-  SSort(Cmds);
-  For I:=0 to Cmds.N-1 do Begin
-   WriteLn;
-   WriteLn('## `gh ',Cmds.A[I],'`');
-   WriteLn;
-   ListSubs(Cmds.A[I],Subs);
-   If Subs.N=0 Then Begin
-    RunShell(Q(ParamStr(0))+' '+Cmds.A[I]+' --help');
-   End
-   Else Begin
-    SSort(Subs);
-    For J:=0 to Subs.N-1 do Begin
-     WriteLn('### `gh ',Cmds.A[I],' ',Subs.A[J],'`');
-     WriteLn;
-     RunShell(Q(ParamStr(0))+' '+Cmds.A[I]+' '+Subs.A[J]+' --help');
-     WriteLn;
-    End;
+ WriteLn('# gh reference');
+ ListSubs('',Cmds);
+ SSort(Cmds);
+ For I:=0 to Cmds.N-1 do Begin
+  ListSubs(Cmds.A[I],Subs);
+  If Subs.N=0 Then One(Cmds.A[I],2)
+  Else Begin
+   One(Cmds.A[I],2);
+   SSort(Subs);
+   For J:=0 to Subs.N-1 do Begin
+    ListSubs(Cmds.A[I]+' '+Subs.A[J],Subs2);
+    One(Cmds.A[I]+' '+Subs.A[J],3);
+    SSort(Subs2);
+    For K:=0 to Subs2.N-1 do One(Cmds.A[I]+' '+Subs.A[J]+' '+Subs2.A[K],4);
    End;
   End;
- End
- Else Begin
-  Die2('unknown help topic "'+T+'"',1);
  End;
 End;
 
@@ -17054,26 +18094,27 @@ Var
 Begin
  If(ArgStart>ParamCount)Then Begin PrintMainHelp;Halt(0);End;
  Cmd:=ParamStr(ArgStart);
- If(Cmd='environment')or(Cmd='exit-codes')or(Cmd='formatting')or(Cmd='reference')or(Cmd='mintty')or
-   (Cmd='accessibility')or(Cmd='actions')Then Begin
-  If(Cmd='mintty')or(Cmd='accessibility')or(Cmd='actions')Then Begin
-   WriteLn(Lg('See https://cli.github.com/manual for details on this topic.',
-     'Consultez https://cli.github.com/manual pour plus de d'+#130+'tails sur ce sujet.'));
-   Halt(0);
-  End;
-  PrintTopic(Cmd);Halt(0);
+ If Cmd='reference' Then Begin PrintReference;Halt(0);End;
+ If(Cmd='environment')or(Cmd='exit-codes')or(Cmd='formatting')or(Cmd='mintty')or(Cmd='accessibility')or(Cmd='actions')Then Begin
+  PrintHelpTopic(Cmd);Halt(0);
  End;
  Cmd:='';
  For I:=ArgStart to ParamCount do Cmd:=Cmd+' '+Q(ParamStr(I));
  Halt(RunShell(Q(ParamStr(0))+Cmd+' --help'));
 End;
 Const
- NDsp=174;
- Disp:Array[0..NDsp-1]of TDisp=(  (P:'alias delete';F:@CmdAliasDelete),
-  (P:'alias imports';F:@CmdAliasImports),
+ NDsp=187;
+ Disp:Array[0..NDsp-1]of TDisp=(  (P:'agent-task create';F:@CmdAgentTaskCreate),
+  (P:'agent-task list';F:@CmdAgentTaskList),
+  (P:'agent-task view';F:@CmdAgentTaskView),
+  (P:'alias delete';F:@CmdAliasDelete),
+  (P:'alias import';F:@CmdAliasImports),
   (P:'alias list';F:@CmdAliasList),
   (P:'alias set';F:@CmdAliasSet),
   (P:'api';F:@CmdApi),
+  (P:'attestation download';F:@CmdAttestationDownload),
+  (P:'attestation trusted-root';F:@CmdAttestationTrustedRoot),
+  (P:'attestation verify';F:@CmdAttestationVerify),
   (P:'auth git-credential';F:@CmdAuthGitCred),
   (P:'auth login';F:@CmdAuthLogin),
   (P:'auth logout';F:@CmdAuthLogout),
@@ -17094,6 +18135,8 @@ Const
   (P:'codespace list';F:@CmdCodespaceList),
   (P:'codespace logs';F:@CmdCodespaceLogs),
   (P:'codespace ports';F:@CmdCodespacePorts),
+  (P:'codespace ports forward';F:@CmdCodespacePortsForward),
+  (P:'codespace ports visibility';F:@CmdCodespacePortsVisibility),
   (P:'codespace rebuild';F:@CmdCodespaceRebuild),
   (P:'codespace ssh';F:@CmdCodespaceSsh),
   (P:'codespace stop';F:@CmdCodespaceStop),
@@ -17103,6 +18146,7 @@ Const
   (P:'config get';F:@CmdConfigGet),
   (P:'config list';F:@CmdConfigList),
   (P:'config set';F:@CmdConfigSet),
+  (P:'copilot';F:@CmdCopilot),
   (P:'extension browse';F:@CmdExtBrowse),
   (P:'extension create';F:@CmdExtCreate),
   (P:'extension exec';F:@CmdExtExec),
@@ -17142,6 +18186,7 @@ Const
   (P:'label delete';F:@CmdLabelDelete),
   (P:'label edit';F:@CmdLabelEdit),
   (P:'label list';F:@CmdLabelList),
+  (P:'licenses';F:@CmdLicenses),
   (P:'org list';F:@CmdOrgList),
   (P:'pr checkout';F:@CmdPrCheckout),
   (P:'pr checks';F:@CmdPrChecks),
@@ -17161,6 +18206,7 @@ Const
   (P:'pr unlock';F:@CmdPrUnlock),
   (P:'pr update-branch';F:@CmdPrUpdateBranch),
   (P:'pr view';F:@CmdPrView),
+  (P:'preview prompter';F:@CmdPreviewPrompter),
   (P:'project close';F:@CmdProjectClose),
   (P:'project copy';F:@CmdProjectCopy),
   (P:'project create';F:@CmdProjectCreate),
@@ -17187,6 +18233,8 @@ Const
   (P:'release edit';F:@CmdReleaseEdit),
   (P:'release list';F:@CmdReleaseList),
   (P:'release upload';F:@CmdReleaseUpload),
+  (P:'release verify';F:@CmdReleaseVerify),
+  (P:'release verify-asset';F:@CmdReleaseVerifyAsset),
   (P:'release view';F:@CmdReleaseView),
   (P:'repo archive';F:@CmdRepoArchive),
   (P:'repo autolink create';F:@CmdAutolinkCreate),
@@ -17300,6 +18348,37 @@ Begin
  Halt(1);
 End;
 
+{ alias de commandes de gh (cs, ext, ls, new, co, remove...) }
+Function CanonWord(Const Prev,W:AnsiString):AnsiString;
+Const
+ NA=4;
+Var
+ G:AnsiString;
+Begin
+ CanonWord:=W;
+ If Prev='' Then Begin
+  If W='cs' Then CanonWord:='codespace'
+  Else If(W='ext')or(W='extensions')Then CanonWord:='extension'
+  Else If W='rs' Then CanonWord:='ruleset'
+  Else If W='at' Then CanonWord:='attestation'
+  Else If(W='agent')or(W='agents')or(W='agent-tasks')Then CanonWord:='agent-task';
+  Exit;
+ End;
+ G:=' '+Prev+' ';
+ If W='ls' Then Begin
+  If Pos(G,' alias cache codespace config extension gist gpg-key issue label org pr project release repo run ruleset secret ssh-key variable workflow repo autolink repo deploy-key repo gitignore repo license ')>0 Then CanonWord:='list';
+ End
+ Else If W='new' Then Begin
+  If Pos(G,' gist issue pr release repo repo autolink ')>0 Then CanonWord:='create';
+ End
+ Else If W='co' Then Begin
+  If Prev='pr' Then CanonWord:='checkout';
+ End
+ Else If W='remove' Then Begin
+  If(Prev='secret')or(Prev='variable')Then CanonWord:='delete';
+ End;
+End;
+
 Procedure Run;
 Var
  C,W2,W3,Path:AnsiString;
@@ -17308,7 +18387,7 @@ Var
  Ext,Cmd:AnsiString;
 Begin
  If ParamCount=0 Then Begin PrintMainHelp;Halt(0);End;
- C:=ParamStr(1);
+ C:=CanonWord('',ParamStr(1));
  If(C='-h')or(C='--help')or(C='/?')Then Begin PrintMainHelp;Halt(0);End;
  If(C='--version')or(C='-v')Then Begin
   WriteLn('gh version ',ToolVersion,' (pascal)');
@@ -17321,8 +18400,8 @@ Begin
   Halt(RunShell(SelfCmd+' pr checkout'+Cmd));
  End;
  If(not IsBuiltinCmd(C))and YHas(CfgY,'aliases|'+C)Then RunAlias(C);
- If ParamCount>=2 Then W2:=ParamStr(2) Else W2:='';
- If ParamCount>=3 Then W3:=ParamStr(3) Else W3:='';
+ If ParamCount>=2 Then W2:=CanonWord(C,ParamStr(2)) Else W2:='';
+ If ParamCount>=3 Then W3:=CanonWord(C+' '+W2,ParamStr(3)) Else W3:='';
  { plus longue correspondance : trois mots, deux mots, un mot }
  N:=0;P:=Nil;
  If(W3<>'')and(W2<>'')and(Copy(W2,1,1)<>'-')and(Copy(W3,1,1)<>'-')Then Begin
