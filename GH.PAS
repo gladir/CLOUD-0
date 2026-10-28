@@ -2258,6 +2258,7 @@ Var
  PosArgs:TSList;
  ArgStart:LongInt;
  JsonListing:Boolean;
+ StopAfter:LongInt;
 
 Procedure CmdBegin(Const Path,Usage:AnsiString);
 Var
@@ -2266,7 +2267,7 @@ Begin
  CmdPath:=Path;CmdUsage:=Usage;CmdLongDesc:='';CmdJsonFields:='';
  SClear(CmdAliases);SClear(CmdExamples);
  For I:=0 to MaxOpt-1 do Begin SClear(OVals[I]);OSet[I]:=False;End;
- ONum:=0;SClear(PosArgs);JsonListing:=False;
+ ONum:=0;SClear(PosArgs);JsonListing:=False;StopAfter:=0;
 End;
 
 Procedure CmdLong(Const S:AnsiString);
@@ -2442,7 +2443,7 @@ Begin
  I:=First;
  While I<=ParamCount do Begin
   A:=ParamStr(I);
-  If Rest Then SAdd(PosArgs,A)
+  If Rest or((StopAfter>0)and(PosArgs.N>=StopAfter))Then SAdd(PosArgs,A)
   Else If A='--' Then Rest:=True
   Else If(A='-h')or(A='--help')or(A='/?')Then Begin PrintCmdHelp;Halt(0);End
   Else If StartsWith(A,'--')Then Begin
@@ -2495,6 +2496,12 @@ Begin
   Else SAdd(PosArgs,A);
   Inc(I);
  End;
+End;
+
+Procedure ParseArgsStop;
+Begin
+ StopAfter:=1;
+ ParseArgs(ArgStart);
 End;
 
 Procedure NeedArgs(Min,Max:LongInt);
@@ -10590,6 +10597,6277 @@ Begin
  For I:=0 to L.N-1 do WriteLn(JS(L.A[I],'login'));
 End;
 { ------------------------------------------------------------------ }
+{ gh issue, gh label                                                  }
+{ ------------------------------------------------------------------ }
+
+Const
+ IssueFields='assignees,author,body,closed,closedAt,comments,createdAt,id,isPinned,labels,milestone,number,'+
+  'projectCards,projectItems,reactionGroups,state,stateReason,title,updatedAt,url';
+ IssueSpec='assignees=assignees:U;author=user:u;body=body:s;closed=state:C;closedAt=closed_at:N;'+
+  'createdAt=created_at:s;id=node_id:s;labels=labels:L;milestone=milestone:m;number=number:n;state=state:S;'+
+  'stateReason=state_reason:X;title=title:s;updatedAt=updated_at:s;url=html_url:s';
+
+{ commentaires d'un ticket ou d'une pull request au format gh }
+Function CommentsJson(Const Path:AnsiString):AnsiString;
+Var
+ L:TIList;
+ I:LongInt;
+ O,A:TSList;
+ R:TSList;
+ Perm:AnsiString;
+Begin
+ ApiPagedQ(Path,0,'',L);
+ SClear(R);
+ For I:=0 to L.N-1 do Begin
+  SClear(O);
+  FR(O,'id',JQ(JS(L.A[I],'node_id')));
+  FR(O,'author',UserJson(JGet(L.A[I],'user')));
+  FS(O,'authorAssociation',JS(L.A[I],'author_association'));
+  FS(O,'body',JS(L.A[I],'body'));
+  FS(O,'createdAt',JS(L.A[I],'created_at'));
+  FB(O,'includesCreatedEdit',JS(L.A[I],'updated_at')<>JS(L.A[I],'created_at'));
+  FB(O,'isMinimized',False);
+  FS(O,'minimizedReason','');
+  FR(O,'reactionGroups','[]');
+  FS(O,'url',JS(L.A[I],'html_url'));
+  FB(O,'viewerDidAuthor',JS(L.A[I],'user.login')=MeCache);
+  SAdd(R,ObjOf(O));
+ End;
+ CommentsJson:='['+JoinList(R,',')+']';
+End;
+
+Function IssueHook(Node:LongInt;Const F:AnsiString;Var Out_:AnsiString):Boolean;
+Begin
+ IssueHook:=True;
+ If F='comments' Then Out_:=CommentsJson(RepoApi('/issues/'+IStr(JI(Node,'number'))+'/comments'))
+ Else If F='isPinned' Then Out_:='false'
+ Else If(F='projectCards')or(F='projectItems')or(F='reactionGroups')Then Out_:='[]'
+ Else IssueHook:=False;
+End;
+
+{ liste de tickets (hors pull requests) avec arret anticipe }
+Procedure FetchIssues(Const Path:AnsiString;Limit:LongInt;Var L:TIList);
+Var
+ R:THttpReq;
+ Url:AnsiString;
+ J,C:LongInt;
+ Per:LongInt;
+Begin
+ L.N:=0;SetLength(L.A,0);
+ Per:=100;
+ If(Limit>0)and(Limit<100)Then Per:=Limit;
+ Url:=WithQuery(Path,'per_page='+IStr(Per));
+ While Url<>'' do Begin
+  ApiMust(R,'GET',Url,'');
+  J:=JParse(R.RespBody);
+  If(J<0)or(JP[J].Kind<>JK_ARR)Then Break;
+  C:=JP[J].First;
+  While C>=0 do Begin
+   If JGet(C,'pull_request')<0 Then Begin
+    IAdd(L,C);
+    If(Limit>0)and(L.N>=Limit)Then Exit;
+   End;
+   C:=JP[C].Next;
+  End;
+  Url:=LinkNext(R.RespHeaders);
+ End;
+End;
+
+{ numero d'un jalon a partir de son titre ou de son numero }
+Function MilestoneNumber(Const S:AnsiString):LongInt;
+Var
+ L:TIList;
+ I:LongInt;
+Begin
+ If ToInt(S,-1)>0 Then Begin MilestoneNumber:=ToInt(S,0);Exit;End;
+ ApiPagedQ(RepoApi('/milestones?state=all'),0,'',L);
+ For I:=0 to L.N-1 do If JS(L.A[I],'title')=S Then Begin MilestoneNumber:=JI(L.A[I],'number');Exit;End;
+ Die('no milestone found with title "'+S+'"');
+ MilestoneNumber:=0;
+End;
+
+Procedure NoResults(Const Msg:AnsiString);
+Begin
+ If ErrTTY Then WriteLn(StdErr,Msg);
+ Halt(0);
+End;
+
+Procedure PrintIssueRow(N:LongInt;Const Label_:AnsiString);
+Var
+ Lb:AnsiString;
+Begin
+ Lb:=NamesOf(JGet(N,'labels'),'name');
+ If OutTTY Then
+  TblRow('#'+IStr(JI(N,'number'))+#9+JS(N,'title')+#9+Lb+#9+TimeCell(JS(N,'updated_at')))
+ Else
+  TblRow(IStr(JI(N,'number'))+#9+UpStr(JS(N,'state'))+#9+JS(N,'title')+#9+Lb+#9+JS(N,'updated_at'));
+End;
+
+Procedure CmdIssueList;
+Var
+ Path,St,Q_,Lab,Me:AnsiString;
+ L:TIList;
+ Limit,I:LongInt;
+ Labels:TSList;
+ T:Int64;
+Begin
+ CmdBegin('issue list','');
+ CmdAlias('ls');
+ Opt('app','','string','Filter by GitHub App author@@Filtre par application GitHub');
+ Opt('assignee','a','string','Filter by assignee@@Filtre par personne assign'+#130+'e');
+ Opt('author','A','string','Filter by author@@Filtre par auteur');
+ Opt('label','l','*strings','Filter by label@@Filtre par '+#130+'tiquette');
+ OptLimitN('Maximum number of issues to fetch',30);
+ Opt('mention','','string','Filter by mention@@Filtre par mention');
+ Opt('milestone','m','string','Filter by milestone number or title@@Filtre par num'+#130+'ro ou titre de jalon');
+ OptRepo;
+ Opt('search','S','query','Search issues with query@@Recherche des tickets avec une requ'+#136+'te');
+ Opt('state','s','string','Filter by state: {open|closed|all} (default "open")@@Filtre par '+#130+'tat : {open|closed|all} (d'+#130+'faut "open")');
+ OptWeb('List issues in the web browser@@Liste les tickets dans le navigateur');
+ OptJsonAll;
+ CmdJson(IssueFields);
+ CmdExample('$ gh issue list --label "bug" --label "help wanted"');
+ CmdExample('$ gh issue list --author monalisa');
+ CmdExample('$ gh issue list --assignee "@me"');
+ ParseArgs(ArgStart);
+ NeedArgs(0,0);
+ JsonSetup(IssueFields);
+ NeedRepo;
+ St:=StateParam(OptGetDef('state','open'));
+ If OptHas('web')Then Begin
+  Q_:='is:issue';
+  If St<>'all' Then Q_:=Q_+' is:'+St;
+  OpenWeb(RepoWebUrl+'/issues?q='+UrlEnc(Q_,False));Exit;
+ End;
+ Limit:=OptInt('limit',30);
+ If Limit<=0 Then Die2('invalid limit: '+IStr(Limit),1);
+ If OptHas('search')or OptHas('app')Then Begin
+  Q_:='repo:'+RepoFull+' is:issue '+OptGet('search');
+  If St<>'all' Then Q_:=Q_+' state:'+St;
+  If OptHas('assignee')Then Q_:=Q_+' assignee:'+OptGet('assignee');
+  If OptHas('author')Then Q_:=Q_+' author:'+OptGet('author');
+  If OptHas('app')Then Q_:=Q_+' author:app/'+OptGet('app');
+  If OptHas('mention')Then Q_:=Q_+' mentions:'+OptGet('mention');
+  If OptHas('milestone')Then Q_:=Q_+' milestone:"'+OptGet('milestone')+'"';
+  OptList('label',Labels);
+  For I:=0 to Labels.N-1 do Q_:=Q_+' label:"'+Labels.A[I]+'"';
+  ApiPaged('/search/issues?q='+UrlEnc(Q_,False),Limit,'items',L,T);
+ End
+ Else Begin
+  Path:=RepoApi('/issues?state='+St);
+  If OptHas('assignee')Then Path:=Path+'&assignee='+UrlEnc(ResolveMe(OptGet('assignee')),False);
+  If OptHas('author')Then Path:=Path+'&creator='+UrlEnc(ResolveMe(OptGet('author')),False);
+  If OptHas('mention')Then Path:=Path+'&mentioned='+UrlEnc(ResolveMe(OptGet('mention')),False);
+  If OptHas('milestone')Then Path:=Path+'&milestone='+IStr(MilestoneNumber(OptGet('milestone')));
+  OptCsv('label',Labels);
+  If Labels.N>0 Then Path:=Path+'&labels='+UrlEnc(JoinList(Labels,','),False);
+  FetchIssues(Path,Limit,L);
+ End;
+ If UseJson Then Begin EmitItems(L,IssueSpec,@IssueHook);Exit;End;
+ If L.N=0 Then NoResults('No '+IfThen_(St='all','',St+' ')+'issues match your search in '+RepoFull);
+ ShowingLine(L.N,L.N,IfThen_(St='all','',St+' ')+'issues',RepoFull);
+ TblBegin('');
+ For I:=0 to L.N-1 do PrintIssueRow(L.A[I],'');
+ TblPrint;
+End;
+
+Procedure PrintIssueComments(Const Path:AnsiString);
+Var
+ L:TIList;
+ I:LongInt;
+Begin
+ ApiPagedQ(Path,0,'',L);
+ For I:=0 to L.N-1 do Begin
+  WriteLn;
+  WriteLn(JS(L.A[I],'user.login'),' ',IfThen_(OutTTY,'commented '+TimeCell(JS(L.A[I],'created_at')),JS(L.A[I],'created_at')));
+  WriteLn;
+  WriteLn('  ',ReplaceAll(JS(L.A[I],'body'),#10,#10'  '));
+ End;
+End;
+
+Procedure CmdIssueView;
+Var
+ N:LongInt;
+ J:LongInt;
+ St:AnsiString;
+Begin
+ CmdBegin('issue view','{<number> | <url>}');
+ Opt('comments','c','','View issue comments@@Affiche les commentaires du ticket');
+ OptRepo;
+ OptWeb('Open an issue in the browser@@Ouvre un ticket dans le navigateur');
+ OptJsonAll;
+ CmdJson(IssueFields);
+ ParseArgs(ArgStart);
+ NeedArgs(1,1);
+ JsonSetup(IssueFields);
+ N:=ParseNumArg(Pos1(0),'issue');
+ NeedRepo;
+ If OptHas('web')Then Begin OpenWeb(RepoWebUrl+'/issues/'+IStr(N));Exit;End;
+ J:=ApiJ('GET',RepoApi('/issues/'+IStr(N)),'');
+ If UseJson Then Begin EmitItem(J,IssueSpec,@IssueHook);Exit;End;
+ St:=UpStr(JS(J,'state'));
+ If OutTTY Then Begin
+  WriteLn(JS(J,'title'),' ',RepoFull,'#',N);
+  WriteLn(IfThen_(St='OPEN','Open','Closed'),' '#226#128#162' ',JS(J,'user.login'),' opened ',TimeCell(JS(J,'created_at')),
+    ' '#226#128#162' ',Pluralize(JI(J,'comments'),'comment'));
+  If JGet(J,'labels')>=0 Then If JP[JGet(J,'labels')].Cnt>0 Then WriteLn('Labels: ',NamesOf(JGet(J,'labels'),'name'));
+  If JP[JGet(J,'assignees')].Cnt>0 Then WriteLn('Assignees: ',NamesOf(JGet(J,'assignees'),'login'));
+  If(JGet(J,'milestone')>=0)and(JP[JGet(J,'milestone')].Kind=JK_OBJ)Then WriteLn('Milestone: ',JS(J,'milestone.title'));
+  WriteLn;
+  If JS(J,'body')<>'' Then WriteLn('  ',ReplaceAll(JS(J,'body'),#10,#10'  '))
+  Else WriteLn('  No description provided');
+  If OptHas('comments')Then PrintIssueComments(RepoApi('/issues/'+IStr(N)+'/comments'));
+  WriteLn;
+  WriteLn('View this issue on GitHub: ',JS(J,'html_url'));
+ End
+ Else Begin
+  WriteLn('title:'#9,JS(J,'title'));
+  WriteLn('state:'#9,St);
+  WriteLn('author:'#9,JS(J,'user.login'));
+  WriteLn('labels:'#9,NamesOf(JGet(J,'labels'),'name'));
+  WriteLn('comments:'#9,JI(J,'comments'));
+  WriteLn('assignees:'#9,NamesOf(JGet(J,'assignees'),'login'));
+  WriteLn('projects:'#9);
+  If(JGet(J,'milestone')>=0)and(JP[JGet(J,'milestone')].Kind=JK_OBJ)Then WriteLn('milestone:'#9,JS(J,'milestone.title'))
+  Else WriteLn('milestone:'#9);
+  WriteLn('number:'#9,N);
+  WriteLn('--');
+  WriteLn(JS(J,'body'));
+  If OptHas('comments')Then PrintIssueComments(RepoApi('/issues/'+IStr(N)+'/comments'));
+ End;
+End;
+
+{ ---------- create / edit ---------- }
+
+Procedure CmdIssueCreate;
+Var
+ Title,Body,Url:AnsiString;
+ HasBody:Boolean;
+ F:TSList;
+ Lab,Asg,Tmp:TSList;
+ J,I:LongInt;
+Begin
+ CmdBegin('issue create','');
+ CmdAlias('new');
+ Opt('assignee','a','*login','Assign people by their login. Use "@me" to self-assign.@@Assigne des personnes par leur identifiant. Utilisez "@me" pour vous assigner.');
+ Opt('body','b','string','Supply a body. Will prompt for one otherwise.@@Fournit un corps. Sinon, il sera demand'+#130+'.');
+ Opt('body-file','F','file','Read body text from file (use "-" to read from standard input)@@Lit le corps depuis un fichier ("-" lit l''entr'+#130+'e standard)');
+ Opt('editor','e','','Skip prompts and open the text editor to write the title and body in.@@Ouvre l'''+#130+'diteur de texte pour '+#130+'crire le titre et le corps.');
+ Opt('label','l','*name','Add labels by name@@Ajoute des '+#130+'tiquettes par nom');
+ Opt('milestone','m','name','Add the issue to a milestone by name@@Ajoute le ticket '+#133+' un jalon par nom');
+ Opt('project','p','*title','Add the issue to projects by title@@Ajoute le ticket '+#133+' des projets par titre');
+ OptRepo;
+ Opt('template','T','name','Template name to use as starting body text@@Nom du mod'+#138+'le utilis'+#130+' comme corps initial');
+ Opt('title','t','string','Supply a title. Will prompt for one otherwise.@@Fournit un titre. Sinon, il sera demand'+#130+'.');
+ OptWeb('Open the browser to create an issue@@Ouvre le navigateur pour cr'+#130+'er un ticket');
+ CmdExample('$ gh issue create --title "I found a bug" --body "Nothing works"');
+ CmdExample('$ gh issue create --label "bug,help wanted"');
+ CmdExample('$ gh issue create --assignee monalisa,hubot');
+ ParseArgs(ArgStart);
+ NeedArgs(0,0);
+ NeedRepo;
+ If OptHas('web')Then Begin
+  OpenWeb(RepoWebUrl+'/issues/new'+IfThen_(OptHas('title'),'?title='+UrlEnc(OptGet('title'),False),''));
+  Exit;
+ End;
+ Title:=OptGet('title');
+ Body:=BodyOpt(HasBody);
+ If OptHas('editor')Then Begin
+  Tmp.N:=0;
+  Title:=EditText('# '+Lg('Title','Titre')+#10#10,'.md');
+  If Pos(#10,Title)>0 Then Begin Body:=Copy(Title,Pos(#10,Title)+1,Length(Title));Title:=FirstLine(Title);End;
+  If Title<>'' Then If Title[1]='#' Then Title:=TrimStr(Copy(Title,2,Length(Title)));
+  HasBody:=True;
+ End;
+ If(Title='')or not HasBody Then Begin
+  If InteractiveOk Then Begin
+   If Title='' Then Title:=AskLine('Title','');
+   If not HasBody Then Body:=AskBody('Body');
+  End
+  Else Die2('must provide `--title` and `--body` (or `--recover`) when not running interactively',1);
+ End;
+ If Title='' Then Die2('title can''t be blank',1);
+ SClear(F);
+ FS(F,'title',Title);FS(F,'body',Body);
+ OptCsv('label',Lab);
+ If Lab.N>0 Then FR(F,'labels',StrArr(Lab));
+ OptCsv('assignee',Asg);
+ For I:=0 to Asg.N-1 do Asg.A[I]:=ResolveMe(Asg.A[I]);
+ If Asg.N>0 Then FR(F,'assignees',StrArr(Asg));
+ If OptHas('milestone')Then FN(F,'milestone',MilestoneNumber(OptGet('milestone')));
+ J:=ApiJ('POST',RepoApi('/issues'),ObjOf(F));
+ If ErrTTY Then WriteLn(StdErr,'');
+ WriteLn(JS(J,'html_url'));
+End;
+
+Procedure CmdIssueEdit;
+Var
+ I,N,J,M:LongInt;
+ F:TSList;
+ Body,Title,Lb:AnsiString;
+ HasBody:Boolean;
+ Add,Rem:TSList;
+Begin
+ CmdBegin('issue edit','{<numbers> | <urls>}');
+ Opt('add-assignee','','*login','Add assigned users by their login. Use "@me" to assign yourself.@@Ajoute des personnes assign'+#130+'es. Utilisez "@me" pour vous assigner.');
+ Opt('add-label','','*name','Add labels by name@@Ajoute des '+#130+'tiquettes par nom');
+ Opt('add-project','','*title','Add the issue to projects by title@@Ajoute le ticket '+#133+' des projets par titre');
+ Opt('body','b','string','Set the new body.@@D'+#130+'finit le nouveau corps.');
+ Opt('body-file','F','file','Read body text from file (use "-" to read from standard input)@@Lit le corps depuis un fichier');
+ Opt('milestone','m','name','Edit the milestone the issue belongs to by name@@Modifie le jalon du ticket');
+ Opt('remove-assignee','','*login','Remove assigned users by their login. Use "@me" to unassign yourself.@@Retire des personnes assign'+#130+'es.');
+ Opt('remove-label','','*name','Remove labels by name@@Retire des '+#130+'tiquettes par nom');
+ Opt('remove-milestone','','','Remove the milestone association from the issue@@Retire le jalon du ticket');
+ Opt('remove-project','','*title','Remove the issue from projects by title@@Retire le ticket de projets par titre');
+ OptRepo;
+ Opt('title','t','string','Set the new title.@@D'+#130+'finit le nouveau titre.');
+ ParseArgs(ArgStart);
+ NeedArgs(1,-1);
+ N:=ParseNumArg(Pos1(0),'issue');
+ NeedRepo;
+ Body:=BodyOpt(HasBody);
+ For I:=0 to PosArgs.N-1 do Begin
+  N:=ParseNumArg(PosArgs.A[I],'issue');
+  SClear(F);
+  If OptHas('title')Then FS(F,'title',OptGet('title'));
+  If HasBody Then FS(F,'body',Body);
+  If OptHas('milestone')Then FN(F,'milestone',MilestoneNumber(OptGet('milestone')));
+  If OptHas('remove-milestone')Then FR(F,'milestone','null');
+  If F.N>0 Then ApiJ('PATCH',RepoApi('/issues/'+IStr(N)),ObjOf(F));
+  OptCsv('add-label',Add);
+  If Add.N>0 Then ApiJ('POST',RepoApi('/issues/'+IStr(N)+'/labels'),'{"labels":'+StrArr(Add)+'}');
+  OptCsv('remove-label',Rem);
+  For J:=0 to Rem.N-1 do ApiJ('DELETE',RepoApi('/issues/'+IStr(N)+'/labels/'+PathEnc(Rem.A[J])),'');
+  OptCsv('add-assignee',Add);
+  For J:=0 to Add.N-1 do Add.A[J]:=ResolveMe(Add.A[J]);
+  If Add.N>0 Then ApiJ('POST',RepoApi('/issues/'+IStr(N)+'/assignees'),'{"assignees":'+StrArr(Add)+'}');
+  OptCsv('remove-assignee',Rem);
+  For J:=0 to Rem.N-1 do Rem.A[J]:=ResolveMe(Rem.A[J]);
+  If Rem.N>0 Then ApiJ('DELETE',RepoApi('/issues/'+IStr(N)+'/assignees'),'{"assignees":'+StrArr(Rem)+'}');
+  M:=ApiJ('GET',RepoApi('/issues/'+IStr(N)),'');
+  WriteLn(JS(M,'html_url'));
+ End;
+End;
+
+{ ---------- close / reopen / comment / delete ---------- }
+
+Procedure AddComment(N:LongInt;Const Text:AnsiString);
+Begin
+ ApiJ('POST',RepoApi('/issues/'+IStr(N)+'/comments'),'{"body":'+JQ(Text)+'}');
+End;
+
+Procedure IssueState(Close:Boolean);
+Var
+ N,J:LongInt;
+ F:TSList;
+ Reason:AnsiString;
+Begin
+ If Close Then CmdBegin('issue close','{<number> | <url>}') Else CmdBegin('issue reopen','{<number> | <url>}');
+ Opt('comment','c','string','Leave a closing comment@@Laisse un commentaire de fermeture');
+ If Close Then Opt('reason','r','string','Reason for closing: {completed|not planned}@@Raison de la fermeture : {completed|not planned}');
+ OptRepo;
+ ParseArgs(ArgStart);
+ NeedArgs(1,1);
+ N:=ParseNumArg(Pos1(0),'issue');
+ NeedRepo;
+ J:=ApiJ('GET',RepoApi('/issues/'+IStr(N)),'');
+ If(UpStr(JS(J,'state'))='CLOSED')=Close Then Begin
+  WriteLn(StdErr,'! Issue ',RepoFull,'#',N,' (',JS(J,'title'),') is already ',IfThen_(Close,'closed','open'));
+  Exit;
+ End;
+ If OptHas('comment')Then AddComment(N,OptGet('comment'));
+ SClear(F);
+ If Close Then Begin
+  FS(F,'state','closed');
+  Reason:=LoStr(OptGet('reason'));
+  If Reason='not planned' Then FS(F,'state_reason','not_planned')
+  Else If(Reason='completed')or(Reason='')Then FS(F,'state_reason','completed')
+  Else Die2('invalid reason "'+Reason+'": valid values are {completed|not planned}',1);
+ End
+ Else Begin FS(F,'state','open');FS(F,'state_reason','reopened');End;
+ ApiJ('PATCH',RepoApi('/issues/'+IStr(N)),ObjOf(F));
+ WriteLn(StdErr,#226#156#147' ',IfThen_(Close,'Closed','Reopened'),' issue ',RepoFull,'#',N,' (',JS(J,'title'),')');
+End;
+
+Procedure CmdIssueClose;
+Begin
+ IssueState(True);
+End;
+
+Procedure CmdIssueReopen;
+Begin
+ IssueState(False);
+End;
+
+Procedure CmdIssueComment;
+Var
+ Me_:AnsiString;
+ Cnt_:LongInt;
+ N,J:LongInt;
+ Body:AnsiString;
+ HasBody:Boolean;
+ L:TIList;
+Begin
+ CmdBegin('issue comment','{<number> | <url>}');
+ Opt('body','b','string','The comment body text@@Le texte du commentaire');
+ Opt('body-file','F','file','Read body text from file (use "-" to read from standard input)@@Lit le corps depuis un fichier');
+ Opt('create-if-none','','','Create a new comment if no comments are found. Can be used only with --edit-last@@Cr'+#130+'e un commentaire s''il n''y en a pas (avec --edit-last)');
+ Opt('delete-last','','','Delete the last comment of the current user@@Supprime le dernier commentaire de l''utilisateur');
+ Opt('edit-last','','','Edit the last comment of the current user@@Modifie le dernier commentaire de l''utilisateur');
+ Opt('editor','e','','Skip prompts and open the text editor to write the body in@@Ouvre l'''+#130+'diteur de texte pour '+#130+'crire le corps');
+ OptRepo;
+ Opt('web','w','','Open the web browser to write the comment@@Ouvre le navigateur pour '+#130+'crire le commentaire');
+ Opt('yes','','','Skip the delete confirmation prompt when --delete-last is provided@@Ignore la confirmation de --delete-last');
+ ParseArgs(ArgStart);
+ NeedArgs(1,1);
+ N:=ParseNumArg(Pos1(0),'issue');
+ NeedRepo;
+ If OptHas('web')Then Begin OpenWeb(RepoWebUrl+'/issues/'+IStr(N)+'#issuecomment-new');Exit;End;
+ Body:=BodyOpt(HasBody);
+ If OptHas('delete-last')or OptHas('edit-last')Then Begin
+  ApiPagedQ(RepoApi('/issues/'+IStr(N)+'/comments'),0,'',L);
+  J:=-1;
+  Me_:=CurrentUser;
+  Begin
+   Cnt_:=L.N-1;
+   While Cnt_>=0 do Begin
+    If JS(L.A[Cnt_],'user.login')=Me_ Then Begin J:=L.A[Cnt_];Break;End;
+    Dec(Cnt_);
+   End;
+  End;
+  If J<0 Then Begin
+   If not(OptHas('create-if-none')and OptHas('edit-last'))Then Die('no comments found for current user');
+  End
+  Else Begin
+   If OptHas('delete-last')Then Begin
+    ApiJ('DELETE',RepoApi('/issues/comments/'+IStr(JI(J,'id'))),'');
+    WriteLn(StdErr,#226#156#147' Comment deleted');
+    Exit;
+   End;
+   If not HasBody Then Body:=EditText(JS(J,'body'),'.md');
+   J:=ApiJ('PATCH',RepoApi('/issues/comments/'+IStr(JI(J,'id'))),'{"body":'+JQ(Body)+'}');
+   WriteLn(JS(J,'html_url'));
+   Exit;
+  End;
+ End;
+ If not HasBody Then Begin
+  If OptHas('editor')Then Body:=EditText('','.md')
+  Else If InteractiveOk Then Body:=AskBody('Body')
+  Else Die2('flag `--body` or `--body-file` required when not running interactively',1);
+ End;
+ If TrimStr(Body)='' Then Die2('aborted: empty comment body',1);
+ J:=ApiJ('POST',RepoApi('/issues/'+IStr(N)+'/comments'),'{"body":'+JQ(Body)+'}');
+ WriteLn(JS(J,'html_url'));
+End;
+
+Procedure CmdIssueDelete;
+Var
+ N,J:LongInt;
+ D:LongInt;
+Begin
+ CmdBegin('issue delete','{<number> | <url>}');
+ Opt('confirm','','','Confirm deletion without prompting@@Confirme la suppression sans demander');
+ OptRepo;
+ ParseArgs(ArgStart);
+ NeedArgs(1,1);
+ N:=ParseNumArg(Pos1(0),'issue');
+ NeedRepo;
+ J:=ApiJ('GET',RepoApi('/issues/'+IStr(N)),'');
+ If not OptHas('confirm')Then Begin
+  If not InteractiveOk Then Die2('--confirm required when not running interactively',1);
+  If AskLine('You''re going to delete issue #'+IStr(N)+'. This action cannot be reversed. To confirm, type the issue number:','')<>IStr(N)Then Begin
+   WriteLn(StdErr,'Cancelled.');Halt(2);
+  End;
+ End;
+ D:=Gql('mutation($id:ID!){deleteIssue(input:{issueId:$id}){clientMutationId}}','{"id":'+JQ(JS(J,'node_id'))+'}');
+ WriteLn(StdErr,#226#156#147' Deleted issue ',RepoFull,'#',N,' (',JS(J,'title'),').');
+End;
+
+Procedure IssueLock(Lock:Boolean);
+Var
+ N:LongInt;
+ Reason:AnsiString;
+ F:TSList;
+Begin
+ If Lock Then CmdBegin('issue lock','{<number> | <url>}') Else CmdBegin('issue unlock','{<number> | <url>}');
+ If Lock Then Opt('reason','r','string','Optional reason for locking conversation (off_topic, resolved, spam, too_heated).@@Raison facultative du verrouillage (off_topic, resolved, spam, too_heated).');
+ OptRepo;
+ ParseArgs(ArgStart);
+ NeedArgs(1,1);
+ N:=ParseNumArg(Pos1(0),'issue');
+ NeedRepo;
+ If Lock Then Begin
+  SClear(F);
+  Reason:=OptGet('reason');
+  If Reason<>'' Then Begin
+   If Pos(Reason,'off_topic resolved spam too_heated')=0 Then Die2('invalid reason "'+Reason+'"',1);
+   FS(F,'lock_reason',Reason);
+  End;
+  ApiJ('PUT',RepoApi('/issues/'+IStr(N)+'/lock'),ObjOf(F));
+  WriteLn(StdErr,#226#156#147' Locked conversation in issue ',RepoFull,'#',N);
+ End
+ Else Begin
+  ApiJ('DELETE',RepoApi('/issues/'+IStr(N)+'/lock'),'');
+  WriteLn(StdErr,#226#156#147' Unlocked conversation in issue ',RepoFull,'#',N);
+ End;
+End;
+
+Procedure CmdIssueLock;
+Begin
+ IssueLock(True);
+End;
+
+Procedure CmdIssueUnlock;
+Begin
+ IssueLock(False);
+End;
+
+Procedure IssuePin(Pin:Boolean);
+Var
+ N,J,D:LongInt;
+Begin
+ If Pin Then CmdBegin('issue pin','{<number> | <url>}') Else CmdBegin('issue unpin','{<number> | <url>}');
+ OptRepo;
+ ParseArgs(ArgStart);
+ NeedArgs(1,1);
+ N:=ParseNumArg(Pos1(0),'issue');
+ NeedRepo;
+ J:=ApiJ('GET',RepoApi('/issues/'+IStr(N)),'');
+ If Pin Then Gql('mutation($id:ID!){pinIssue(input:{issueId:$id}){issue{id}}}','{"id":'+JQ(JS(J,'node_id'))+'}')
+ Else Gql('mutation($id:ID!){unpinIssue(input:{issueId:$id}){issue{id}}}','{"id":'+JQ(JS(J,'node_id'))+'}');
+ WriteLn(StdErr,#226#156#147' ',IfThen_(Pin,'Pinned','Unpinned'),' issue ',RepoFull,'#',N,' (',JS(J,'title'),')',
+   IfThen_(Pin,' to ',' from '),RepoFull);
+End;
+
+Procedure CmdIssuePin;
+Begin
+ IssuePin(True);
+End;
+
+Procedure CmdIssueUnpin;
+Begin
+ IssuePin(False);
+End;
+
+Procedure CmdIssueTransfer;
+Var
+ N,J,D:LongInt;
+ H,O,Nm:AnsiString;
+ Dest:LongInt;
+Begin
+ CmdBegin('issue transfer','{<number> | <url>} <destination-repo>');
+ OptRepo;
+ ParseArgs(ArgStart);
+ NeedArgs(2,2);
+ N:=ParseNumArg(Pos1(0),'issue');
+ NeedRepo;
+ If not ParseRepoRef(Pos1(1),H,O,Nm)Then Die('expected the "[HOST/]OWNER/REPO" format, got "'+Pos1(1)+'"');
+ J:=ApiJ('GET',RepoApi('/issues/'+IStr(N)),'');
+ Dest:=ApiJ('GET','/repos/'+O+'/'+Nm,'');
+ D:=Gql('mutation($id:ID!,$repo:ID!){transferIssue(input:{issueId:$id,repositoryId:$repo}){issue{url}}}',
+   '{"id":'+JQ(JS(J,'node_id'))+',"repo":'+JQ(JS(Dest,'node_id'))+'}');
+ WriteLn(JS(D,'transferIssue.issue.url'));
+End;
+
+Procedure CmdIssueStatus;
+Var
+ L:TIList;
+ T:Int64;
+ I:LongInt;
+ Q_:AnsiString;
+ Secs:Integer;
+ Titles,Queries:TSList;
+Begin
+ CmdBegin('issue status','');
+ OptRepo;OptJsonAll;
+ CmdJson('assignees,author,body,closed,closedAt,comments,createdAt,id,labels,milestone,number,state,title,updatedAt,url');
+ ParseArgs(ArgStart);
+ NeedArgs(0,0);
+ NeedRepo;
+ SClear(Titles);SClear(Queries);
+ SAdd(Titles,'Issues assigned to you');SAdd(Queries,'assignee:@me');
+ SAdd(Titles,'Issues mentioning you');SAdd(Queries,'mentions:@me');
+ SAdd(Titles,'Issues opened by you');SAdd(Queries,'author:@me');
+ WriteLn;
+ WriteLn('Relevant issues in ',RepoFull);
+ WriteLn;
+ For Secs:=0 to 2 do Begin
+  WriteLn(Titles.A[Secs]);
+  ApiPaged('/search/issues?q='+UrlEnc('repo:'+RepoFull+' is:issue is:open '+Queries.A[Secs],False),10,'items',L,T);
+  If L.N=0 Then WriteLn('  There are no ',LoStr(Titles.A[Secs]))
+  Else For I:=0 to L.N-1 do WriteLn('  #',JI(L.A[I],'number'),'  ',JS(L.A[I],'title'));
+  WriteLn;
+ End;
+End;
+
+Procedure CmdIssueDevelop;
+Var
+ N,J,D,Rf:LongInt;
+ Nm,Base,Sha,Slug:AnsiString;
+ I:LongInt;
+ Gq:LongInt;
+Begin
+ CmdBegin('issue develop','{<number> | <url>}');
+ Opt('base','b','string','Name of the base branch you want to make your new branch from@@Branche de base pour la nouvelle branche');
+ Opt('branch-repo','','string','Name or URL of the repository where you want to create your new branch@@D'+#130+'p'+#147+'t o'+#151+' cr'+#130+'er la nouvelle branche');
+ Opt('checkout','c','','Checkout the branch after creating it@@R'+#130+'cup'+#138+'re la branche apr'+#138+'s sa cr'+#130+'ation');
+ Opt('list','l','','List linked branches for the issue@@Liste les branches li'+#130+'es au ticket');
+ Opt('name','n','string','Name of the branch to create@@Nom de la branche '+#133+' cr'+#130+'er');
+ OptRepo;
+ ParseArgs(ArgStart);
+ NeedArgs(1,1);
+ N:=ParseNumArg(Pos1(0),'issue');
+ NeedRepo;
+ J:=ApiJ('GET',RepoApi('/issues/'+IStr(N)),'');
+ If OptHas('list')Then Begin
+  D:=Gql('query($o:String!,$r:String!,$n:Int!){repository(owner:$o,name:$r){issue(number:$n){linkedBranches(first:30){nodes{ref{name repository{url}}}}}}}',
+    '{"o":'+JQ(RepoOwner)+',"r":'+JQ(RepoName)+',"n":'+IStr(N)+'}');
+  Rf:=JPath(D,'repository.issue.linkedBranches.nodes');
+  If(Rf<0)or(JP[Rf].Cnt=0)Then Begin WriteLn(StdErr,'no linked branches found for ',RepoFull,'#',N);Exit;End;
+  I:=JP[Rf].First;
+  While I>=0 do Begin WriteLn(JS(I,'ref.name'),#9,JS(I,'ref.repository.url')+'/tree/'+JS(I,'ref.name'));I:=JP[I].Next;End;
+  Exit;
+ End;
+ D:=ApiJ('GET',RepoApi(''),'');
+ Base:=OptGet('base');If Base='' Then Base:=JS(D,'default_branch');
+ Rf:=ApiJ('GET',RepoApi('/git/ref/heads/'+Base),'');
+ Sha:=JS(Rf,'object.sha');
+ Nm:=OptGet('name');
+ If Nm='' Then Begin
+  Slug:=LoStr(JS(J,'title'));
+  For I:=1 to Length(Slug)do If not(Slug[I]in['a'..'z','0'..'9'])Then Slug[I]:='-';
+  While Pos('--',Slug)>0 do Slug:=ReplaceAll(Slug,'--','-');
+  Nm:=IStr(N)+'-'+Copy(Slug,1,40);
+  While(Nm<>'')and(Nm[Length(Nm)]='-')do Delete(Nm,Length(Nm),1);
+ End;
+ Gq:=Gql('mutation($i:ID!,$r:ID!,$o:GitObjectID!,$n:String){createLinkedBranch(input:{issueId:$i,repositoryId:$r,oid:$o,name:$n}){linkedBranch{ref{name}}}}',
+   '{"i":'+JQ(JS(J,'node_id'))+',"r":'+JQ(JS(D,'node_id'))+',"o":'+JQ(Sha)+',"n":'+JQ(Nm)+'}');
+ WriteLn(RepoWebUrl+'/tree/'+JS(Gq,'createLinkedBranch.linkedBranch.ref.name'));
+ If OptHas('checkout')Then Begin
+  GitFg('fetch origin '+Nm);
+  GitFg('checkout '+Nm);
+ End;
+End;
+
+{ ---------- label ---------- }
+
+Const
+ LabelFields='color,createdAt,description,id,isDefault,name,updatedAt,url';
+ LabelSpec='color=color:s;createdAt=created_at:N;description=description:s;id=node_id:s;isDefault=default:b;name=name:s;'+
+  'updatedAt=updated_at:N;url=url:s';
+
+Procedure CmdLabelList;
+Var
+ L:TIList;
+ I,Lim:LongInt;
+ Srch,Sort_,Ord_:AnsiString;
+ Keep:TIList;
+ Q_:AnsiString;
+Begin
+ CmdBegin('label list','');
+ OptLimitN('Maximum number of labels to fetch',30);
+ Opt('order','','string','Order of labels returned: {asc|desc} (default "asc")@@Ordre des '+#130+'tiquettes : {asc|desc} (d'+#130+'faut "asc")');
+ OptRepo;
+ Opt('search','S','string','Search label names and descriptions@@Recherche dans les noms et descriptions');
+ Opt('sort','','string','Sort fetched labels: {created|name} (default "created")@@Trie les '+#130+'tiquettes : {created|name} (d'+#130+'faut "created")');
+ OptWeb('List labels in the web browser@@Liste les '+#130+'tiquettes dans le navigateur');
+ OptJsonAll;
+ CmdJson(LabelFields);
+ ParseArgs(ArgStart);
+ NeedArgs(0,0);
+ JsonSetup(LabelFields);
+ NeedRepo;
+ If OptHas('web')Then Begin OpenWeb(RepoWebUrl+'/labels');Exit;End;
+ Lim:=OptInt('limit',30);
+ Srch:=LoStr(OptGet('search'));
+ ApiPagedQ(RepoApi('/labels'),0,'',L);
+ Keep.N:=0;
+ For I:=0 to L.N-1 do Begin
+  If(Srch<>'')and(Pos(Srch,LoStr(JS(L.A[I],'name')))=0)and(Pos(Srch,LoStr(JS(L.A[I],'description')))=0)Then Continue;
+  If Keep.N<Lim Then IAdd(Keep,L.A[I]);
+ End;
+ If UseJson Then Begin EmitItems(Keep,LabelSpec,Nil);Exit;End;
+ If Keep.N=0 Then NoResults('No labels found in '+RepoFull);
+ ShowingLine(Keep.N,L.N,'labels in '+RepoFull,'');
+ TblBegin('');
+ For I:=0 to Keep.N-1 do
+  TblRow(JS(Keep.A[I],'name')+#9+JS(Keep.A[I],'description')+#9+'#'+JS(Keep.A[I],'color'));
+ TblPrint;
+End;
+
+Procedure CmdLabelCreate;
+Var
+ F:TSList;
+ Color:AnsiString;
+ R:THttpReq;
+ J:LongInt;
+Begin
+ CmdBegin('label create','<name>');
+ Opt('color','c','string','Color of the label@@Couleur de l'''+#130+'tiquette');
+ Opt('description','d','string','Description of the label@@Description de l'''+#130+'tiquette');
+ Opt('force','f','','Update the label color and description if label already exists@@Met '+#133+' jour l'''+#130+'tiquette si elle existe d'+#130+'j'+#133+'');
+ OptRepo;
+ ParseArgs(ArgStart);
+ NeedArgs(1,1);
+ NeedRepo;
+ SClear(F);
+ FS(F,'name',Pos1(0));
+ Color:=OptGet('color');
+ If Color='' Then Begin
+  Randomize;
+  Color:=LoStr(HexStr_(Random($FFFFFF)));
+  While Length(Color)<6 do Color:='0'+Color;
+ End;
+ If Color[1]='#' Then Delete(Color,1,1);
+ FS(F,'color',Color);
+ If OptHas('description')Then FS(F,'description',OptGet('description'));
+ ApiCall(R,'POST',RepoApi('/labels'),ObjOf(F));
+ If ApiOk(R)Then Begin
+  WriteLn(StdErr,#226#156#147' Label "',Pos1(0),'" created in ',RepoFull);
+  Exit;
+ End;
+ If(R.Status=422)and OptHas('force')Then Begin
+  SClear(F);
+  FS(F,'color',Color);
+  If OptHas('description')Then FS(F,'description',OptGet('description'));
+  ApiJ('PATCH',RepoApi('/labels/'+PathEnc(Pos1(0))),ObjOf(F));
+  WriteLn(StdErr,#226#156#147' Label "',Pos1(0),'" updated in ',RepoFull);
+  Exit;
+ End;
+ If R.Status=422 Then Die('label with name "'+Pos1(0)+'" already exists; use `--force` to update its color and description');
+ Die(ErrText(R));
+End;
+
+Procedure CmdLabelEdit;
+Var
+ F:TSList;
+Begin
+ CmdBegin('label edit','<name>');
+ Opt('color','c','string','Color of the label@@Couleur de l'''+#130+'tiquette');
+ Opt('description','d','string','Description of the label@@Description de l'''+#130+'tiquette');
+ Opt('name','n','string','New name of the label@@Nouveau nom de l'''+#130+'tiquette');
+ OptRepo;
+ ParseArgs(ArgStart);
+ NeedArgs(1,1);
+ NeedRepo;
+ SClear(F);
+ If OptHas('name')Then FS(F,'new_name',OptGet('name'));
+ If OptHas('color')Then FS(F,'color',ReplaceAll(OptGet('color'),'#',''));
+ If OptHas('description')Then FS(F,'description',OptGet('description'));
+ If F.N=0 Then Die2('specify at least one of `--color`, `--description`, or `--name`',1);
+ ApiJ('PATCH',RepoApi('/labels/'+PathEnc(Pos1(0))),ObjOf(F));
+ WriteLn(StdErr,#226#156#147' Label "',Pos1(0),'" updated in ',RepoFull);
+End;
+
+Procedure CmdLabelDelete;
+Begin
+ CmdBegin('label delete','<name>');
+ OptRepo;
+ Opt('yes','','','Confirm deletion without prompting@@Confirme la suppression sans demander');
+ ParseArgs(ArgStart);
+ NeedArgs(1,1);
+ NeedRepo;
+ If not OptHas('yes')Then Begin
+  If not InteractiveOk Then Die2('--yes required when not running interactively',1);
+  If not Confirm('Really delete label "'+Pos1(0)+'"?',False)Then Begin WriteLn(StdErr,'Cancelled.');Halt(2);End;
+ End;
+ ApiJ('DELETE',RepoApi('/labels/'+PathEnc(Pos1(0))),'');
+ WriteLn(StdErr,#226#156#147' Label "',Pos1(0),'" deleted from ',RepoFull);
+End;
+
+Procedure CmdLabelClone;
+Var
+ L:TIList;
+ I,Cnt:LongInt;
+ H,O,N:AnsiString;
+ F:TSList;
+ R:THttpReq;
+Begin
+ CmdBegin('label clone','<source-repository>');
+ Opt('force','f','','Overwrite labels in the destination repository@@Remplace les '+#130+'tiquettes du d'+#130+'p'+#147+'t de destination');
+ OptRepo;
+ ParseArgs(ArgStart);
+ NeedArgs(1,1);
+ NeedRepo;
+ If not ParseRepoRef(Pos1(0),H,O,N)Then Die('expected the "[HOST/]OWNER/REPO" format, got "'+Pos1(0)+'"');
+ ApiPagedQ('/repos/'+O+'/'+N+'/labels',0,'',L);
+ Cnt:=0;
+ For I:=0 to L.N-1 do Begin
+  SClear(F);
+  FS(F,'name',JS(L.A[I],'name'));FS(F,'color',JS(L.A[I],'color'));FS(F,'description',JS(L.A[I],'description'));
+  ApiCall(R,'POST',RepoApi('/labels'),ObjOf(F));
+  If ApiOk(R)Then Inc(Cnt)
+  Else If(R.Status=422)and OptHas('force')Then Begin
+   ApiJ('PATCH',RepoApi('/labels/'+PathEnc(JS(L.A[I],'name'))),'{"color":'+JQ(JS(L.A[I],'color'))+',"description":'+JQ(JS(L.A[I],'description'))+'}');
+   Inc(Cnt);
+  End
+  Else If R.Status<>422 Then Die(ErrText(R));
+ End;
+ WriteLn(StdErr,#226#156#147' Cloned ',Cnt,' labels from ',O,'/',N,' to ',RepoFull);
+End;
+{ ------------------------------------------------------------------ }
+{ gh pr                                                               }
+{ ------------------------------------------------------------------ }
+
+Const
+ PrFields='additions,assignees,author,autoMergeRequest,baseRefName,baseRefOid,body,changedFiles,closed,closedAt,'+
+  'closingIssuesReferences,comments,commits,createdAt,deletions,files,fullDatabaseId,headRefName,headRefOid,'+
+  'headRepository,headRepositoryOwner,id,isCrossRepository,isDraft,labels,latestReviews,maintainerCanModify,'+
+  'mergeCommit,mergeStateStatus,mergeable,mergedAt,mergedBy,milestone,number,potentialMergeCommit,projectCards,'+
+  'projectItems,reactionGroups,reviewDecision,reviewRequests,reviews,state,statusCheckRollup,title,updatedAt,url';
+ PrSpec='additions=additions:n;assignees=assignees:U;author=user:u;baseRefName=base.ref:s;baseRefOid=base.sha:s;'+
+  'body=body:s;changedFiles=changed_files:n;closed=state:C;closedAt=closed_at:N;createdAt=created_at:s;'+
+  'deletions=deletions:n;headRefName=head.ref:s;headRefOid=head.sha:s;id=node_id:s;isDraft=draft:b;labels=labels:L;'+
+  'maintainerCanModify=maintainer_can_modify:b;mergedAt=merged_at:N;milestone=milestone:m;number=number:n;'+
+  'title=title:s;updatedAt=updated_at:s;url=html_url:s';
+
+Var
+ PrCacheNum:LongInt;
+ PrCacheNode:LongInt;
+
+{ noeud detaille d'une pull request (la liste REST est partielle) }
+Function PrDetail(Node:LongInt):LongInt;
+Var
+ N:LongInt;
+Begin
+ If JGet(Node,'changed_files')>=0 Then Begin PrDetail:=Node;Exit;End;
+ N:=JI(Node,'number');
+ If(PrCacheNum=N)and(PrCacheNode>=0)Then Begin PrDetail:=PrCacheNode;Exit;End;
+ PrCacheNode:=ApiJ('GET',RepoApi('/pulls/'+IStr(N)),'');
+ PrCacheNum:=N;
+ PrDetail:=PrCacheNode;
+End;
+
+Function PrState(Node:LongInt):AnsiString;
+Begin
+ If(JGet(Node,'merged_at')>=0)and(JP[JGet(Node,'merged_at')].Kind=JK_STR)Then PrState:='MERGED'
+ Else If JB(Node,'merged')Then PrState:='MERGED'
+ Else PrState:=UpStr(JS(Node,'state'));
+End;
+
+{ resultats des controles d'un commit : lignes name TAB state TAB elapsed TAB link TAB description TAB workflow TAB started TAB completed TAB event }
+Procedure FetchChecks(Const Sha:AnsiString;Var Rows:TSList);
+Var
+ L:TIList;
+ I:LongInt;
+ St,Conc,Bucket:AnsiString;
+ T:Int64;
+ J:LongInt;
+ Start,Fin:Int64;
+ El:AnsiString;
+Begin
+ SClear(Rows);
+ ApiPaged(RepoApi('/commits/'+Sha+'/check-runs'),0,'check_runs',L,T);
+ For I:=0 to L.N-1 do Begin
+  St:=JS(L.A[I],'status');Conc:=JS(L.A[I],'conclusion');
+  If St<>'completed' Then Bucket:='pending'
+  Else If(Conc='success')Then Bucket:='pass'
+  Else If(Conc='neutral')or(Conc='skipped')Then Bucket:='skipping'
+  Else If Conc='cancelled' Then Bucket:='cancel'
+  Else Bucket:='fail';
+  Start:=IsoToEpoch(JS(L.A[I],'started_at'));Fin:=IsoToEpoch(JS(L.A[I],'completed_at'));
+  If(Fin>0)and(Start>0)Then Begin
+   El:='';
+   If(Fin-Start)>=3600 Then El:=IStr((Fin-Start)div 3600)+'h';
+   If(Fin-Start)>=60 Then El:=El+IStr(((Fin-Start)mod 3600)div 60)+'m';
+   El:=El+IStr((Fin-Start)mod 60)+'s';
+  End
+  Else El:='0';
+  SAdd(Rows,JS(L.A[I],'name')+#9+Bucket+#9+El+#9+JS(L.A[I],'html_url')+#9+JS(L.A[I],'output.title')+#9+
+    JS(L.A[I],'app.name')+#9+JS(L.A[I],'started_at')+#9+JS(L.A[I],'completed_at')+#9+'');
+ End;
+ J:=ApiTry('GET',RepoApi('/commits/'+Sha+'/status'),'',I);
+ If J>=0 Then Begin
+  J:=JGet(J,'statuses');
+  If J>=0 Then Begin
+   I:=JP[J].First;
+   While I>=0 do Begin
+    St:=JS(I,'state');
+    If St='success' Then Bucket:='pass' Else If(St='failure')or(St='error')Then Bucket:='fail' Else Bucket:='pending';
+    SAdd(Rows,JS(I,'context')+#9+Bucket+#9+'0'+#9+JS(I,'target_url')+#9+JS(I,'description')+#9#9+JS(I,'created_at')+#9+
+      JS(I,'updated_at')+#9);
+    I:=JP[I].Next;
+   End;
+  End;
+ End;
+End;
+
+Function ReviewsJson(Const Path:AnsiString;LatestOnly:Boolean):AnsiString;
+Var
+ L:TIList;
+ I,J:LongInt;
+ O:TSList;
+ R:TSList;
+ Later:Boolean;
+Begin
+ ApiPagedQ(Path,0,'',L);
+ SClear(R);
+ For I:=0 to L.N-1 do Begin
+  If LatestOnly Then Begin
+   Later:=False;
+   For J:=I+1 to L.N-1 do If JS(L.A[J],'user.login')=JS(L.A[I],'user.login')Then Later:=True;
+   If Later Then Continue;
+  End;
+  SClear(O);
+  FR(O,'id',JQ(JS(L.A[I],'node_id')));
+  FR(O,'author',UserJson(JGet(L.A[I],'user')));
+  FS(O,'authorAssociation',JS(L.A[I],'author_association'));
+  FS(O,'body',JS(L.A[I],'body'));
+  FS(O,'submittedAt',JS(L.A[I],'submitted_at'));
+  FB(O,'includesCreatedEdit',False);
+  FR(O,'reactionGroups','[]');
+  FS(O,'state',JS(L.A[I],'state'));
+  FR(O,'commit','{"oid":'+JQ(JS(L.A[I],'commit_id'))+'}');
+  SAdd(R,ObjOf(O));
+ End;
+ ReviewsJson:='['+JoinList(R,',')+']';
+End;
+
+Function ReviewDecision(Const Path:AnsiString):AnsiString;
+Var
+ L:TIList;
+ I,J:LongInt;
+ Dec_:AnsiString;
+ Later:Boolean;
+Begin
+ ApiPagedQ(Path,0,'',L);
+ Dec_:='';
+ For I:=0 to L.N-1 do Begin
+  Later:=False;
+  For J:=I+1 to L.N-1 do If JS(L.A[J],'user.login')=JS(L.A[I],'user.login')Then Later:=True;
+  If Later Then Continue;
+  If JS(L.A[I],'state')='CHANGES_REQUESTED' Then Dec_:='CHANGES_REQUESTED'
+  Else If(JS(L.A[I],'state')='APPROVED')and(Dec_<>'CHANGES_REQUESTED')Then Dec_:='APPROVED';
+ End;
+ ReviewDecision:=Dec_;
+End;
+
+Function PrHook(Node:LongInt;Const F:AnsiString;Var Out_:AnsiString):Boolean;
+Var
+ D,P,C:LongInt;
+ L:TSList;
+ O:TSList;
+ Rows:TSList;
+ Cells:TSList;
+ I:LongInt;
+ M:AnsiString;
+ N:LongInt;
+ Fl:TIList;
+Begin
+ PrHook:=True;
+ N:=JI(Node,'number');
+ If F='state' Then Out_:=JQ(PrState(Node))
+ Else If(F='additions')or(F='deletions')or(F='changedFiles')or(F='maintainerCanModify')Then Begin
+  D:=PrDetail(Node);
+  If F='additions' Then Out_:=IStr(JI(D,'additions'))
+  Else If F='deletions' Then Out_:=IStr(JI(D,'deletions'))
+  Else If F='changedFiles' Then Out_:=IStr(JI(D,'changed_files'))
+  Else Out_:=JBool(JB(D,'maintainer_can_modify'));
+ End
+ Else If F='mergeable' Then Begin
+  D:=PrDetail(Node);
+  If JS(D,'mergeable')='true' Then Out_:='"MERGEABLE"'
+  Else If JS(D,'mergeable')='false' Then Out_:='"CONFLICTING"' Else Out_:='"UNKNOWN"';
+ End
+ Else If F='mergeStateStatus' Then Begin
+  D:=PrDetail(Node);
+  M:=UpStr(JS(D,'mergeable_state'));
+  If M='' Then M:='UNKNOWN';
+  Out_:=JQ(M);
+ End
+ Else If F='mergedBy' Then Begin
+  D:=PrDetail(Node);
+  Out_:=UserJson(JGet(D,'merged_by'));
+ End
+ Else If(F='mergeCommit')Then Begin
+  If(JS(Node,'merge_commit_sha')<>'')and(PrState(Node)='MERGED')Then Out_:='{"oid":'+JQ(JS(Node,'merge_commit_sha'))+'}'
+  Else Out_:='null';
+ End
+ Else If F='potentialMergeCommit' Then Begin
+  If JS(Node,'merge_commit_sha')<>'' Then Out_:='{"oid":'+JQ(JS(Node,'merge_commit_sha'))+'}' Else Out_:='null';
+ End
+ Else If F='autoMergeRequest' Then Begin
+  D:=PrDetail(Node);
+  P:=JGet(D,'auto_merge');
+  If(P<0)or(JP[P].Kind<>JK_OBJ)Then Out_:='null'
+  Else Begin
+   SClear(O);
+   FR(O,'authorEmail','null');FR(O,'commitBody','null');FR(O,'commitHeadline','null');
+   FS(O,'enabledAt','');
+   FR(O,'enabledBy',UserJson(JGet(P,'enabled_by')));
+   FS(O,'mergeMethod',UpStr(JS(P,'merge_method')));
+   Out_:=ObjOf(O);
+  End;
+ End
+ Else If F='isCrossRepository' Then Out_:=JBool(JS(Node,'head.repo.full_name')<>JS(Node,'base.repo.full_name'))
+ Else If F='headRepository' Then Begin
+  If JS(Node,'head.repo.name')='' Then Out_:='null'
+  Else Out_:='{"id":'+JQ(JS(Node,'head.repo.node_id'))+',"name":'+JQ(JS(Node,'head.repo.name'))+'}';
+ End
+ Else If F='headRepositoryOwner' Then Begin
+  If JS(Node,'head.repo.owner.login')='' Then Out_:='null'
+  Else Out_:='{"id":'+JQ(JS(Node,'head.repo.owner.node_id'))+',"login":'+JQ(JS(Node,'head.repo.owner.login'))+'}';
+ End
+ Else If F='fullDatabaseId' Then Out_:=JQ(IStr(JI(Node,'id')))
+ Else If F='reviewDecision' Then Out_:=JQ(ReviewDecision(RepoApi('/pulls/'+IStr(N)+'/reviews')))
+ Else If F='reviews' Then Out_:=ReviewsJson(RepoApi('/pulls/'+IStr(N)+'/reviews'),False)
+ Else If F='latestReviews' Then Out_:=ReviewsJson(RepoApi('/pulls/'+IStr(N)+'/reviews'),True)
+ Else If F='reviewRequests' Then Begin
+  D:=PrDetail(Node);
+  SClear(L);
+  P:=JGet(D,'requested_reviewers');
+  If P>=0 Then Begin
+   C:=JP[P].First;
+   While C>=0 do Begin
+    SAdd(L,'{"requestedReviewer":{"__typename":"User","login":'+JQ(JS(C,'login'))+'}}');
+    C:=JP[C].Next;
+   End;
+  End;
+  P:=JGet(D,'requested_teams');
+  If P>=0 Then Begin
+   C:=JP[P].First;
+   While C>=0 do Begin
+    SAdd(L,'{"requestedReviewer":{"__typename":"Team","name":'+JQ(JS(C,'name'))+',"slug":'+JQ(JS(C,'slug'))+'}}');
+    C:=JP[C].Next;
+   End;
+  End;
+  Out_:='['+JoinList(L,',')+']';
+ End
+ Else If F='comments' Then Out_:=CommentsJson(RepoApi('/issues/'+IStr(N)+'/comments'))
+ Else If F='commits' Then Begin
+  ApiPagedQ(RepoApi('/pulls/'+IStr(N)+'/commits'),0,'',Fl);
+  SClear(L);
+  For I:=0 to Fl.N-1 do Begin
+   SClear(O);
+   FS(O,'authoredDate',JS(Fl.A[I],'commit.author.date'));
+   FR(O,'authors','[{"email":'+JQ(JS(Fl.A[I],'commit.author.email'))+',"id":'+JQ(JS(Fl.A[I],'author.node_id'))+
+     ',"login":'+JQ(JS(Fl.A[I],'author.login'))+',"name":'+JQ(JS(Fl.A[I],'commit.author.name'))+'}]');
+   FS(O,'committedDate',JS(Fl.A[I],'commit.committer.date'));
+   M:=JS(Fl.A[I],'commit.message');
+   FS(O,'messageBody',Copy(M,Pos(#10,M+#10)+1,Length(M)));
+   FS(O,'messageHeadline',FirstLine(M));
+   FS(O,'oid',JS(Fl.A[I],'sha'));
+   SAdd(L,ObjOf(O));
+  End;
+  Out_:='['+JoinList(L,',')+']';
+ End
+ Else If F='files' Then Begin
+  ApiPagedQ(RepoApi('/pulls/'+IStr(N)+'/files'),0,'',Fl);
+  SClear(L);
+  For I:=0 to Fl.N-1 do
+   SAdd(L,'{"path":'+JQ(JS(Fl.A[I],'filename'))+',"additions":'+IStr(JI(Fl.A[I],'additions'))+',"deletions":'+
+     IStr(JI(Fl.A[I],'deletions'))+'}');
+  Out_:='['+JoinList(L,',')+']';
+ End
+ Else If F='statusCheckRollup' Then Begin
+  FetchChecks(JS(Node,'head.sha'),Rows);
+  SClear(L);
+  For I:=0 to Rows.N-1 do Begin
+   SplitStr(Rows.A[I],#9,Cells);
+   M:=Cells.A[1];
+   SClear(O);
+   FS(O,'__typename','CheckRun');
+   FS(O,'name',Cells.A[0]);
+   If M='pending' Then FS(O,'status','IN_PROGRESS') Else FS(O,'status','COMPLETED');
+   If M='pass' Then FS(O,'conclusion','SUCCESS')
+   Else If M='fail' Then FS(O,'conclusion','FAILURE')
+   Else If M='skipping' Then FS(O,'conclusion','SKIPPED')
+   Else If M='cancel' Then FS(O,'conclusion','CANCELLED') Else FS(O,'conclusion','');
+   FS(O,'detailsUrl',Cells.A[3]);
+   FS(O,'startedAt',Cells.A[6]);FS(O,'completedAt',Cells.A[7]);
+   FS(O,'workflowName',Cells.A[5]);
+   SAdd(L,ObjOf(O));
+  End;
+  Out_:='['+JoinList(L,',')+']';
+ End
+ Else If(F='closingIssuesReferences')or(F='projectCards')or(F='projectItems')or(F='reactionGroups')Then Out_:='[]'
+ Else PrHook:=False;
+End;
+
+{ trouve la pull request : numero, URL, ou branche (courante par defaut) ; renvoie le noeud detaille }
+Function FindPr(Const Arg:AnsiString):LongInt;
+Var
+ N:LongInt;
+ Br,Ho:AnsiString;
+ L:TIList;
+ I,P:LongInt;
+ T:Int64;
+ Rem:AnsiString;
+ H,O,Nm:AnsiString;
+Begin
+ Br:=Arg;
+ If Br='' Then Begin
+  Br:=CurrentBranch;
+  If Br='' Then Die('could not determine current branch: not on a branch or not in a git repository');
+ End
+ Else Begin
+  N:=ToInt(Arg,-1);
+  If(N<=0)and(Arg[1]='#')Then N:=ToInt(Copy(Arg,2,20),-1);
+  If(N>0)or(Pos('://',Arg)>0)Then Begin
+   N:=ParseNumArg(Arg,'pull request');
+   NeedRepo;
+   FindPr:=ApiJ('GET',RepoApi('/pulls/'+IStr(N)),'');
+   Exit;
+  End;
+ End;
+ NeedRepo;
+ Ho:='';
+ P:=Pos(':',Br);
+ If P>0 Then Begin Ho:=Copy(Br,1,P-1);Br:=Copy(Br,P+1,Length(Br));End;
+ ApiPagedQ(RepoApi('/pulls?state=all&sort=created&direction=desc'),200,'',L);
+ For I:=0 to L.N-1 do Begin
+  If JS(L.A[I],'head.ref')<>Br Then Continue;
+  If(Ho<>'')and(JS(L.A[I],'head.repo.owner.login')<>Ho)Then Continue;
+  If(JS(L.A[I],'state')='open')or(JS(L.A[I],'merged_at')<>'')Then Begin
+   FindPr:=ApiJ('GET',RepoApi('/pulls/'+IStr(JI(L.A[I],'number'))),'');Exit;
+  End;
+ End;
+ For I:=0 to L.N-1 do
+  If(JS(L.A[I],'head.ref')=Br)and((Ho='')or(JS(L.A[I],'head.repo.owner.login')=Ho))Then Begin
+   FindPr:=ApiJ('GET',RepoApi('/pulls/'+IStr(JI(L.A[I],'number'))),'');Exit;
+  End;
+ Die('no pull requests found for branch "'+Br+'"');
+ FindPr:=-1;
+End;
+
+Function PrNum(Pr:LongInt):LongInt;
+Begin
+ PrNum:=JI(Pr,'number');
+End;
+
+{ etat d'affichage dans les listes }
+Function PrStateLabel(Node:LongInt):AnsiString;
+Var
+ S:AnsiString;
+Begin
+ S:=PrState(Node);
+ If(S='OPEN')and JB(Node,'draft')Then S:='DRAFT';
+ PrStateLabel:=S;
+End;
+
+Procedure CmdPrList;
+Var
+ Path,St,Q_,Lab:AnsiString;
+ L,Keep:TIList;
+ Limit,I,J:LongInt;
+ Labels:TSList;
+ T:Int64;
+ Ok:Boolean;
+ Merged,UseSearch:Boolean;
+ Base,Head,Author,Asg:AnsiString;
+Begin
+ CmdBegin('pr list','');
+ CmdAlias('ls');
+ Opt('app','','string','Filter by GitHub App author@@Filtre par application GitHub');
+ Opt('assignee','a','string','Filter by assignee@@Filtre par personne assign'+#130+'e');
+ Opt('author','A','string','Filter by author@@Filtre par auteur');
+ Opt('base','B','string','Filter by base branch@@Filtre par branche de base');
+ Opt('draft','d','','Filter by draft state@@Filtre les brouillons');
+ Opt('head','H','string','Filter by head branch ("<owner>:<branch>" syntax not supported)@@Filtre par branche source');
+ Opt('label','l','*strings','Filter by label@@Filtre par '+#130+'tiquette');
+ OptLimitN('Maximum number of items to fetch',30);
+ OptRepo;
+ Opt('search','S','query','Search pull requests with query@@Recherche des pull requests avec une requ'+#136+'te');
+ Opt('state','s','string','Filter by state: {open|closed|merged|all} (default "open")@@Filtre par '+#130+'tat : {open|closed|merged|all} (d'+#130+'faut "open")');
+ OptWeb('List pull requests in the web browser@@Liste les pull requests dans le navigateur');
+ OptJsonAll;
+ CmdJson(PrFields);
+ CmdExample('$ gh pr list --author "@me"');
+ CmdExample('$ gh pr list --head "bug-fix" --state all');
+ ParseArgs(ArgStart);
+ NeedArgs(0,0);
+ JsonSetup(PrFields);
+ NeedRepo;
+ St:=LoStr(OptGetDef('state','open'));
+ If(St<>'open')and(St<>'closed')and(St<>'merged')and(St<>'all')Then
+   Die2('invalid argument "'+St+'" for "-s, --state" flag: valid values are {open|closed|merged|all}',1);
+ If OptHas('web')Then Begin
+  OpenWeb(RepoWebUrl+'/pulls?q='+UrlEnc('is:pr'+IfThen_(St<>'all',' is:'+St,''),False));Exit;
+ End;
+ Limit:=OptInt('limit',30);
+ If Limit<=0 Then Die2('invalid limit: '+IStr(Limit),1);
+ OptCsv('label',Labels);
+ Author:=ResolveMe(OptGet('author'));Asg:=ResolveMe(OptGet('assignee'));
+ UseSearch:=OptHas('search')or OptHas('app');
+ If UseSearch Then Begin
+  Q_:='repo:'+RepoFull+' is:pr '+OptGet('search');
+  If St='merged' Then Q_:=Q_+' is:merged' Else If St<>'all' Then Q_:=Q_+' state:'+St;
+  If Author<>'' Then Q_:=Q_+' author:'+Author;
+  If OptHas('app')Then Q_:=Q_+' author:app/'+OptGet('app');
+  If Asg<>'' Then Q_:=Q_+' assignee:'+Asg;
+  If OptHas('base')Then Q_:=Q_+' base:'+OptGet('base');
+  If OptHas('head')Then Q_:=Q_+' head:'+OptGet('head');
+  If OptHas('draft')Then Q_:=Q_+' draft:true';
+  For I:=0 to Labels.N-1 do Q_:=Q_+' label:"'+Labels.A[I]+'"';
+  ApiPaged('/search/issues?q='+UrlEnc(Q_,False),Limit,'items',L,T);
+  For I:=0 to L.N-1 do L.A[I]:=ApiJ('GET',RepoApi('/pulls/'+IStr(JI(L.A[I],'number'))),'');
+  Keep:=L;
+ End
+ Else Begin
+  Path:=RepoApi('/pulls?state=');
+  If St='merged' Then Path:=Path+'closed' Else Path:=Path+St;
+  Path:=Path+'&sort=created&direction=desc';
+  If OptHas('base')Then Path:=Path+'&base='+UrlEnc(OptGet('base'),False);
+  If OptHas('head')Then Begin
+   Head:=OptGet('head');
+   If Pos(':',Head)=0 Then Head:=RepoOwner+':'+Head;
+   Path:=Path+'&head='+UrlEnc(Head,False);
+  End;
+  ApiPagedQ(Path,0,'',L);
+  Keep.N:=0;
+  For I:=0 to L.N-1 do Begin
+   Ok:=True;
+   If(St='merged')and(PrState(L.A[I])<>'MERGED')Then Ok:=False;
+   If OptHas('draft')and not JB(L.A[I],'draft')Then Ok:=False;
+   If(Author<>'')and(JS(L.A[I],'user.login')<>Author)Then Ok:=False;
+   If(Asg<>'')Then Begin
+    Ok:=Ok and(Pos(Asg,NamesOf(JGet(L.A[I],'assignees'),'login'))>0);
+   End;
+   For J:=0 to Labels.N-1 do
+    If Pos(Labels.A[J],NamesOf(JGet(L.A[I],'labels'),'name'))=0 Then Ok:=False;
+   If Ok and(Keep.N<Limit)Then IAdd(Keep,L.A[I]);
+  End;
+ End;
+ If UseJson Then Begin EmitItems(Keep,PrSpec,@PrHook);Exit;End;
+ If Keep.N=0 Then NoResults('No '+IfThen_(St='all','',St+' ')+'pull requests match your search in '+RepoFull);
+ ShowingLine(Keep.N,Keep.N,IfThen_(St='all','',St+' ')+'pull requests',RepoFull);
+ TblBegin('');
+ For I:=0 to Keep.N-1 do Begin
+  Head:=JS(Keep.A[I],'head.ref');
+  If JS(Keep.A[I],'head.repo.full_name')<>JS(Keep.A[I],'base.repo.full_name')Then
+    Head:=JS(Keep.A[I],'head.repo.owner.login')+':'+Head;
+  If OutTTY Then
+   TblRow('#'+IStr(JI(Keep.A[I],'number'))+#9+JS(Keep.A[I],'title')+#9+Head+#9+PrStateLabel(Keep.A[I]))
+  Else
+   TblRow(IStr(JI(Keep.A[I],'number'))+#9+JS(Keep.A[I],'title')+#9+Head+#9+PrStateLabel(Keep.A[I])+#9+JS(Keep.A[I],'created_at'));
+ End;
+ TblPrint;
+End;
+
+Function ChecksSummary(Pr:LongInt):AnsiString;
+Var
+ Rows:TSList;
+ C:TSList;
+ I,Pass,Fail,Pend,Skip,Canc:LongInt;
+Begin
+ FetchChecks(JS(Pr,'head.sha'),Rows);
+ Pass:=0;Fail:=0;Pend:=0;Skip:=0;Canc:=0;
+ For I:=0 to Rows.N-1 do Begin
+  SplitStr(Rows.A[I],#9,C);
+  If C.A[1]='pass' Then Inc(Pass) Else If C.A[1]='fail' Then Inc(Fail) Else If C.A[1]='skipping' Then Inc(Skip)
+  Else If C.A[1]='cancel' Then Inc(Canc) Else Inc(Pend);
+ End;
+ If Rows.N=0 Then ChecksSummary:='No checks'
+ Else If Fail>0 Then ChecksSummary:='X '+IStr(Fail)+'/'+IStr(Rows.N)+' checks failing'
+ Else If Pend>0 Then ChecksSummary:='Checks pending'
+ Else ChecksSummary:='Checks passing';
+End;
+
+{ si l'argument est une URL de pull request, selectionne son depot }
+Procedure ParseRepoFromUrlArg(Const S:AnsiString);
+Var
+ L:TSList;
+Begin
+ If Pos('://',S)>0 Then Begin
+  SplitStr(S,'/',L);
+  If L.N>=7 Then Begin
+   RepoHost:=L.A[2];RepoOwner:=L.A[3];RepoName:=L.A[4];RepoResolved:=True;ApiHost:=RepoHost;
+  End;
+ End;
+End;
+
+Procedure CmdPrView;
+Var
+ Pr,N:LongInt;
+ J:LongInt;
+ Rev,Auto_:AnsiString;
+ St:AnsiString;
+ Commits:LongInt;
+ Rv:LongInt;
+ C:LongInt;
+Begin
+ CmdBegin('pr view','[<number> | <url> | <branch>]');
+ Opt('comments','c','','View pull request comments@@Affiche les commentaires de la pull request');
+ OptRepo;
+ OptWeb('Open a pull request in the browser@@Ouvre une pull request dans le navigateur');
+ OptJsonAll;
+ CmdJson(PrFields);
+ ParseArgs(ArgStart);
+ NeedArgs(0,1);
+ JsonSetup(PrFields);
+ If Pos1(0)<>'' Then ParseRepoFromUrlArg(Pos1(0));
+ NeedRepo;
+ Pr:=FindPr(Pos1(0));
+ N:=PrNum(Pr);
+ If OptHas('web')Then Begin OpenWeb(JS(Pr,'html_url'));Exit;End;
+ If UseJson Then Begin EmitItem(Pr,PrSpec,@PrHook);Exit;End;
+ St:=PrState(Pr);
+ Rev:=NamesOf(JGet(Pr,'requested_reviewers'),'login');
+ If JS(Pr,'auto_merge.merge_method')<>'' Then Auto_:='enabled' Else Auto_:='disabled';
+ If OutTTY Then Begin
+  WriteLn(JS(Pr,'title'),' ',RepoFull,'#',N);
+  Commits:=JI(Pr,'commits');
+  WriteLn(IfThen_(JB(Pr,'draft'),'Draft',IfThen_(St='OPEN','Open',IfThen_(St='MERGED','Merged','Closed'))),' '#226#128#162' ',
+    JS(Pr,'user.login'),' wants to merge ',Pluralize(Commits,'commit'),' into ',JS(Pr,'base.ref'),' from ',
+    JS(Pr,'head.ref'),' '#226#128#162' ',TimeCell(JS(Pr,'created_at')));
+  WriteLn('+',JI(Pr,'additions'),' -',JI(Pr,'deletions'),' '#226#128#162' ',ChecksSummary(Pr));
+  If Rev<>'' Then WriteLn('Reviewers: ',Rev);
+  If JP[JGet(Pr,'assignees')].Cnt>0 Then WriteLn('Assignees: ',NamesOf(JGet(Pr,'assignees'),'login'));
+  If JP[JGet(Pr,'labels')].Cnt>0 Then WriteLn('Labels: ',NamesOf(JGet(Pr,'labels'),'name'));
+  If(JGet(Pr,'milestone')>=0)and(JP[JGet(Pr,'milestone')].Kind=JK_OBJ)Then WriteLn('Milestone: ',JS(Pr,'milestone.title'));
+  WriteLn;
+  If JS(Pr,'body')<>'' Then WriteLn('  ',ReplaceAll(JS(Pr,'body'),#10,#10'  ')) Else WriteLn('  No description provided');
+  If OptHas('comments')Then PrintIssueComments(RepoApi('/issues/'+IStr(N)+'/comments'));
+  WriteLn;
+  WriteLn('View this pull request on GitHub: ',JS(Pr,'html_url'));
+ End
+ Else Begin
+  WriteLn('title:'#9,JS(Pr,'title'));
+  WriteLn('state:'#9,IfThen_(JB(Pr,'draft')and(St='OPEN'),'DRAFT',St));
+  WriteLn('author:'#9,JS(Pr,'user.login'));
+  WriteLn('labels:'#9,NamesOf(JGet(Pr,'labels'),'name'));
+  WriteLn('assignees:'#9,NamesOf(JGet(Pr,'assignees'),'login'));
+  WriteLn('reviewers:'#9,Rev);
+  WriteLn('projects:'#9);
+  If(JGet(Pr,'milestone')>=0)and(JP[JGet(Pr,'milestone')].Kind=JK_OBJ)Then WriteLn('milestone:'#9,JS(Pr,'milestone.title'))
+  Else WriteLn('milestone:'#9);
+  WriteLn('number:'#9,N);
+  WriteLn('url:'#9,JS(Pr,'html_url'));
+  WriteLn('additions:'#9,JI(Pr,'additions'));
+  WriteLn('deletions:'#9,JI(Pr,'deletions'));
+  WriteLn('auto-merge:'#9,Auto_);
+  WriteLn('--');
+  WriteLn(JS(Pr,'body'));
+  If OptHas('comments')Then PrintIssueComments(RepoApi('/issues/'+IStr(N)+'/comments'));
+ End;
+End;
+
+{ ------------------------------------------------------------------ }
+{ gh pr : create, checkout, diff, review, merge, ...                  }
+{ ------------------------------------------------------------------ }
+
+{ branche amont et remote de la branche courante }
+Function BranchRemote(Const Br:AnsiString):AnsiString;
+Begin
+ BranchRemote:=GitOut('config --get branch.'+Br+'.remote');
+End;
+
+Procedure CmdPrCreate;
+Var
+ Title,Body,Base,Head,HeadOwner,Remote,RemUrl,CmdOut:AnsiString;
+ HasBody:Boolean;
+ F:TSList;
+ Lab,Asg,Rev,Revs,Teams:TSList;
+ J,I,D,Cur:LongInt;
+ H,O,N:AnsiString;
+ Log_,Sub:AnsiString;
+ Lines:TSList;
+ Existing:TIList;
+ Existing_:TSList;
+ Fill:Boolean;
+ Pr:LongInt;
+ R:THttpReq;
+ BaseRepo:LongInt;
+ Dry:Boolean;
+Begin
+ CmdBegin('pr create','');
+ CmdAlias('new');
+ Opt('assignee','a','*login','Assign people by their login. Use "@me" to self-assign.@@Assigne des personnes par leur identifiant.');
+ Opt('base','B','branch','The branch into which you want your code merged@@La branche dans laquelle fusionner votre code');
+ Opt('body','b','string','Body for the pull request@@Corps de la pull request');
+ Opt('body-file','F','file','Read body text from file (use "-" to read from standard input)@@Lit le corps depuis un fichier');
+ Opt('draft','d','','Mark pull request as a draft@@Marque la pull request comme brouillon');
+ Opt('dry-run','','','Print details instead of creating the PR. May still push git changes.@@Affiche les d'+#130+'tails sans cr'+#130+'er la pull request.');
+ Opt('editor','e','','Skip prompts and open the text editor to write the title and body in.@@Ouvre l'''+#130+'diteur de texte pour '+#130+'crire le titre et le corps.');
+ Opt('fill','f','','Use commit info for title and body@@Utilise les informations des commits pour le titre et le corps');
+ Opt('fill-first','','','Use first commit info for title and body@@Utilise le premier commit pour le titre et le corps');
+ Opt('fill-verbose','','','Use commits msg+body for description@@Utilise les messages complets des commits comme description');
+ Opt('head','H','branch','The branch that contains commits for your pull request (default [current branch])@@La branche contenant les commits (d'+#130+'faut : branche courante)');
+ Opt('label','l','*name','Add labels by name@@Ajoute des '+#130+'tiquettes par nom');
+ Opt('milestone','m','name','Add the pull request to a milestone by name@@Ajoute la pull request '+#133+' un jalon');
+ Opt('no-maintainer-edit','','','Disable maintainer''s ability to modify pull request@@Interdit aux mainteneurs de modifier la pull request');
+ Opt('project','p','*title','Add the pull request to projects by title@@Ajoute la pull request '+#133+' des projets');
+ Opt('recover','','string','Recover input from a failed run of create@@R'+#130+'cup'+#138+'re la saisie d''une ex'+#130+'cution '+#130+'chou'+#130+'e');
+ OptRepo;
+ Opt('reviewer','r','*name','Request reviews from people or teams by their handle@@Demande des r'+#130+'visions '+#133+' des personnes ou '+#130+'quipes');
+ Opt('template','T','file','Template file to use as starting body text@@Fichier mod'+#138+'le utilis'+#130+' comme corps initial');
+ Opt('title','t','string','Title for the pull request@@Titre de la pull request');
+ OptWeb('Open the web browser to create a pull request@@Ouvre le navigateur pour cr'+#130+'er une pull request');
+ CmdExample('$ gh pr create --title "The bug is fixed" --body "Everything works again"');
+ CmdExample('$ gh pr create --reviewer monalisa,hubot  --reviewer myorg/team-name');
+ CmdExample('$ gh pr create --project "Roadmap"');
+ CmdExample('$ gh pr create --base develop --head monalisa:feature');
+ ParseArgs(ArgStart);
+ NeedArgs(0,0);
+ NeedRepo;
+ Dry:=OptHas('dry-run');
+ BaseRepo:=ApiJ('GET',RepoApi(''),'');
+ Base:=OptGet('base');
+ If Base='' Then Base:=JS(BaseRepo,'default_branch');
+ Head:=OptGet('head');
+ HeadOwner:='';
+ If Head='' Then Begin
+  Head:=CurrentBranch;
+  If Head='' Then Die2('could not determine current branch: not on a branch or not in a git repository',1);
+  Remote:=BranchRemote(Head);
+  If Remote='' Then Remote:='origin';
+  RemUrl:=GitOut('remote get-url '+Remote);
+  If(RemUrl<>'')and ParseRepoRef(RemUrl,H,O,N)Then HeadOwner:=O;
+  If(Head=Base)and(HeadOwner=RepoOwner)Then Die2('head branch "'+Head+'" is the same as base branch "'+Base+'", cannot create a pull request',1);
+  If not Dry Then Begin
+   If GitOut('rev-parse --abbrev-ref '+Head+'@{upstream}')='' Then Begin
+    If GitFg('push --set-upstream '+Remote+' HEAD:refs/heads/'+Head)<>0 Then Die('failed to push branch '+Head);
+   End
+   Else If GitOut('rev-list --count @{upstream}..HEAD')<>'0' Then GitFg('push '+Remote+' HEAD:refs/heads/'+Head);
+  End;
+ End
+ Else Begin
+  If Pos(':',Head)>0 Then Begin HeadOwner:=Copy(Head,1,Pos(':',Head)-1);Head:=Copy(Head,Pos(':',Head)+1,Length(Head));End;
+ End;
+ If OptHas('web')Then Begin
+  OpenWeb(RepoWebUrl+'/compare/'+UrlEnc(Base,False)+'...'+IfThen_((HeadOwner<>'')and(HeadOwner<>RepoOwner),HeadOwner+':','')+
+    UrlEnc(Head,False)+'?expand=1'+IfThen_(OptHas('title'),'&title='+UrlEnc(OptGet('title'),False),''));
+  Exit;
+ End;
+ Title:=OptGet('title');
+ Body:=BodyOpt(HasBody);
+ Fill:=OptHas('fill')or OptHas('fill-first')or OptHas('fill-verbose');
+ If Fill Then Begin
+  Remote:=BranchRemote(Head);If Remote='' Then Remote:='origin';
+  Log_:=GitOut('log --reverse --format=%s%x1f%b%x1e '+Remote+'/'+Base+'..'+Head);
+  If Log_='' Then Log_:=GitOut('log --reverse --format=%s%x1f%b%x1e '+Base+'..'+Head);
+  SplitStr(Log_,#30,Lines);
+  If(Lines.N>0)and(TrimStr(Lines.A[Lines.N-1])='')Then Dec(Lines.N);
+  If Lines.N>0 Then Begin
+   SplitStr(Lines.A[0],#31,Existing_);
+   If(Lines.N=1)or OptHas('fill-first')Then Begin
+    If not OptHas('title')Then Title:=TrimStr(Existing_.A[0]);
+    If(not HasBody)Then Begin
+     If Existing_.N>1 Then Body:=TrimStr(Existing_.A[1]);
+     HasBody:=True;
+    End;
+   End
+   Else Begin
+    If not OptHas('title')Then Begin
+     Title:=ReplaceAll(Head,'-',' ');Title:=ReplaceAll(Title,'_',' ');
+     If Title<>'' Then Title:=UpStr(Copy(Title,1,1))+Copy(Title,2,Length(Title));
+    End;
+    If not HasBody Then Begin
+     Body:='';
+     For I:=0 to Lines.N-1 do Begin
+      SplitStr(Lines.A[I],#31,Existing_);
+      If OptHas('fill-verbose')Then Body:=Body+'**'+TrimStr(Existing_.A[0])+'**'#10+IfThen_(Existing_.N>1,TrimStr(Existing_.A[1])+#10,'')+#10
+      Else Body:=Body+'- '+TrimStr(Existing_.A[0])+#10;
+     End;
+     HasBody:=True;
+    End;
+   End;
+  End;
+ End;
+ If OptHas('template')and not HasBody Then Begin
+  If ReadAll(OptGet('template'),Body)Then HasBody:=True;
+ End;
+ If OptHas('editor')Then Begin
+  Sub:=EditText(Title+#10#10+Body,'.md');
+  Title:=FirstLine(Sub);
+  Body:=TrimStr(Copy(Sub,Pos(#10,Sub+#10)+1,Length(Sub)));
+  HasBody:=True;
+ End;
+ If(Title='')or not HasBody Then Begin
+  If InteractiveOk Then Begin
+   WriteLn(StdErr);
+   WriteLn(StdErr,'Creating pull request for ',IfThen_((HeadOwner<>'')and(HeadOwner<>RepoOwner),HeadOwner+':','')+Head,' into ',Base,' in ',RepoFull);
+   WriteLn(StdErr);
+   If Title='' Then Title:=AskLine('Title','');
+   If not HasBody Then Body:=AskBody('Body');
+  End
+  Else Die2('must provide `--title` and `--body` (or `--fill` or `fill-first` or `--fillverbose`) when not running interactively',1);
+ End;
+ If Title='' Then Die2('title can''t be blank',1);
+ If Dry Then Begin
+  WriteLn('Would have created a Pull Request with:');
+  WriteLn('title:'#9,Title);
+  WriteLn('draft:'#9,JBool(OptHas('draft')));
+  WriteLn('base:'#9,Base);
+  WriteLn('head:'#9,IfThen_((HeadOwner<>'')and(HeadOwner<>RepoOwner),HeadOwner+':','')+Head);
+  WriteLn('labels:'#9);
+  WriteLn('reviewers:'#9);
+  WriteLn('assignees:'#9);
+  WriteLn('milestones:'#9);
+  WriteLn('projects:'#9);
+  WriteLn('maintainerCanModify:'#9,JBool(not OptHas('no-maintainer-edit')));
+  WriteLn;
+  WriteLn(Body);
+  Exit;
+ End;
+ SClear(F);
+ FS(F,'title',Title);FS(F,'body',Body);FS(F,'base',Base);
+ If(HeadOwner<>'')and(HeadOwner<>RepoOwner)Then FS(F,'head',HeadOwner+':'+Head) Else FS(F,'head',Head);
+ FB(F,'draft',OptHas('draft'));
+ FB(F,'maintainer_can_modify',not OptHas('no-maintainer-edit'));
+ ApiCall(R,'POST',RepoApi('/pulls'),ObjOf(F));
+ If not ApiOk(R)Then Begin
+  If R.Status=422 Then Begin
+   J:=JParse(R.RespBody);
+   If Pos('already exists',R.RespBody)>0 Then Begin
+    ApiPagedQ(RepoApi('/pulls?state=open&head='+UrlEnc(IfThen_(HeadOwner<>'',HeadOwner,RepoOwner)+':'+Head,False)),1,'',Existing);
+    If Existing.N>0 Then
+      Die('a pull request for branch "'+Head+'" into branch "'+Base+'" already exists:'#10+JS(Existing.A[0],'html_url'));
+   End;
+  End;
+  Die(ErrText(R));
+ End;
+ Pr:=JParse(R.RespBody);
+ D:=JI(Pr,'number');
+ SClear(F);
+ OptCsv('label',Lab);OptCsv('assignee',Asg);
+ For I:=0 to Asg.N-1 do Asg.A[I]:=ResolveMe(Asg.A[I]);
+ If Lab.N>0 Then FR(F,'labels',StrArr(Lab));
+ If Asg.N>0 Then FR(F,'assignees',StrArr(Asg));
+ If OptHas('milestone')Then FN(F,'milestone',MilestoneNumber(OptGet('milestone')));
+ If F.N>0 Then ApiJ('PATCH',RepoApi('/issues/'+IStr(D)),ObjOf(F));
+ OptCsv('reviewer',Rev);
+ If Rev.N>0 Then Begin
+  SClear(Revs);SClear(Teams);
+  For I:=0 to Rev.N-1 do Begin
+   Rev.A[I]:=ResolveMe(Rev.A[I]);
+   If Pos('/',Rev.A[I])>0 Then SAdd(Teams,Copy(Rev.A[I],Pos('/',Rev.A[I])+1,Length(Rev.A[I]))) Else SAdd(Revs,Rev.A[I]);
+  End;
+  SClear(F);
+  FR(F,'reviewers',StrArr(Revs));FR(F,'team_reviewers',StrArr(Teams));
+  ApiJ('POST',RepoApi('/pulls/'+IStr(D)+'/requested_reviewers'),ObjOf(F));
+ End;
+ WriteLn(JS(Pr,'html_url'));
+End;
+
+Procedure CmdPrCheckout;
+Var
+ Pr:LongInt;
+ N:LongInt;
+ Br,Ref,RemoteName,HeadRef,Url,Cur:AnsiString;
+ Cross:Boolean;
+ I:LongInt;
+ Rem:AnsiString;
+Begin
+ CmdBegin('pr checkout','{<number> | <url> | <branch>}');
+ CmdAlias('co');
+ Opt('branch','b','string','Local branch name to use (default [the name of the head branch])@@Nom de la branche locale (d'+#130+'faut : nom de la branche source)');
+ Opt('detach','','','Checkout PR with a detached HEAD@@R'+#130+'cup'+#138+'re la pull request avec un HEAD d'+#130+'tach'+#130+'');
+ Opt('force','f','','Reset the existing local branch to the latest state of the pull request@@R'+#130+'initialise la branche locale existante');
+ OptRepo;
+ Opt('recurse-submodules','','','Update all submodules after checkout@@Met '+#133+' jour tous les sous-modules apr'+#138+'s la r'+#130+'cup'+#130+'ration');
+ ParseArgs(ArgStart);
+ NeedArgs(0,1);
+ If Pos1(0)<>'' Then ParseRepoFromUrlArg(Pos1(0));
+ NeedRepo;
+ If Pos1(0)='' Then Die2('argument required when using the --repo flag',1);
+ Pr:=FindPr(Pos1(0));
+ N:=PrNum(Pr);
+ HeadRef:=JS(Pr,'head.ref');
+ Br:=OptGet('branch');
+ If Br='' Then Br:=HeadRef;
+ Cross:=JS(Pr,'head.repo.full_name')<>JS(Pr,'base.repo.full_name');
+ I:=BaseRemote;
+ If I>=0 Then RemoteName:=Remotes[I].Name Else RemoteName:='origin';
+ Cur:=CurrentBranch;
+ If OptHas('detach')Then Begin
+  If GitFg('fetch '+RemoteName+' refs/pull/'+IStr(N)+'/head')<>0 Then Halt(1);
+  GitFg('checkout --detach FETCH_HEAD');
+ End
+ Else If(not Cross)and(GitOut('rev-parse --verify --quiet refs/heads/'+Br)='')Then Begin
+  If GitFg('fetch '+RemoteName+' +refs/heads/'+HeadRef+':refs/remotes/'+RemoteName+'/'+HeadRef)<>0 Then Halt(1);
+  GitFg('checkout -b '+Br+' --track '+RemoteName+'/'+HeadRef);
+ End
+ Else Begin
+  If Cross Then Begin
+   If GitOut('rev-parse --verify --quiet refs/heads/'+Br)='' Then Begin
+    If GitFg('fetch '+RemoteName+' refs/pull/'+IStr(N)+'/head:'+Br)<>0 Then Halt(1);
+    Url:=RepoClonePath(ApiHost,JS(Pr,'head.repo.owner.login'),JS(Pr,'head.repo.name'),GitProto(ApiHost));
+    GitFg('config branch.'+Br+'.remote '+Q(Url));
+    GitFg('config branch.'+Br+'.merge refs/heads/'+HeadRef);
+    GitFg('config branch.'+Br+'.pushRemote '+Q(Url));
+    GitFg('checkout '+Br);
+   End
+   Else Begin
+    If Cur=Br Then Begin
+     If OptHas('force')Then Begin
+      GitFg('fetch '+RemoteName+' refs/pull/'+IStr(N)+'/head');
+      GitFg('reset --hard FETCH_HEAD');
+     End
+     Else GitFg('pull --ff-only '+RemoteName+' refs/pull/'+IStr(N)+'/head');
+    End
+    Else Begin
+     GitFg('fetch '+RemoteName+' '+IfThen_(OptHas('force'),'+','')+'refs/pull/'+IStr(N)+'/head:'+Br);
+     GitFg('checkout '+Br);
+    End;
+   End;
+  End
+  Else Begin
+   GitFg('fetch '+RemoteName+' '+HeadRef);
+   GitFg('checkout '+Br);
+   If OptHas('force')Then GitFg('reset --hard '+RemoteName+'/'+HeadRef) Else GitFg('merge --ff-only '+RemoteName+'/'+HeadRef);
+  End;
+ End;
+ If OptHas('recurse-submodules')Then GitFg('submodule update --init --recursive');
+End;
+
+Procedure CmdPrDiff;
+Var
+ Pr:LongInt;
+ R:THttpReq;
+ L:TIList;
+ I:LongInt;
+Begin
+ CmdBegin('pr diff','[<number> | <url> | <branch>]');
+ Opt('color','','string','Use color in diff output: {always|never|auto} (default "auto")@@Utilise la couleur dans la sortie : {always|never|auto}');
+ Opt('name-only','','','Display only names of changed files@@Affiche seulement les noms des fichiers modifi'+#130+'s');
+ Opt('patch','','','Display diff in patch format@@Affiche la diff'+#130+'rence au format patch');
+ OptRepo;
+ OptWeb('Open the pull request diff in the browser@@Ouvre la diff'+#130+'rence de la pull request dans le navigateur');
+ ParseArgs(ArgStart);
+ NeedArgs(0,1);
+ If Pos1(0)<>'' Then ParseRepoFromUrlArg(Pos1(0));
+ NeedRepo;
+ Pr:=FindPr(Pos1(0));
+ If OptHas('web')Then Begin OpenWeb(JS(Pr,'html_url')+'/files');Exit;End;
+ If OptHas('name-only')Then Begin
+  ApiPagedQ(RepoApi('/pulls/'+IStr(PrNum(Pr))+'/files'),0,'',L);
+  For I:=0 to L.N-1 do WriteLn(JS(L.A[I],'filename'));
+  Exit;
+ End;
+ ReqInit(R,'GET',ApiUrl(RepoApi('/pulls/'+IStr(PrNum(Pr)))),TokenOf(ApiHost));
+ If OptHas('patch')Then R.Headers:='Accept: application/vnd.github.patch'#13#10
+ Else R.Headers:='Accept: application/vnd.github.diff'#13#10;
+ HttpDo(R);
+ If not ApiOk(R)Then Die(ErrText(R));
+ Write(R.RespBody);
+End;
+
+Procedure CmdPrReview;
+Var
+ Pr:LongInt;
+ Body,Ev_:AnsiString;
+ HasBody:Boolean;
+ F:TSList;
+ Opts:TSList;
+ K:LongInt;
+ J:LongInt;
+Begin
+ CmdBegin('pr review','[<number> | <url> | <branch>]');
+ Opt('approve','a','','Approve pull request@@Approuve la pull request');
+ Opt('body','b','string','Specify the body of a review@@Corps de la r'+#130+'vision');
+ Opt('body-file','F','file','Read body text from file (use "-" to read from standard input)@@Lit le corps depuis un fichier');
+ Opt('comment','c','','Comment on a pull request@@Commente la pull request');
+ OptRepo;
+ Opt('request-changes','r','','Request changes on a pull request@@Demande des modifications sur la pull request');
+ ParseArgs(ArgStart);
+ NeedArgs(0,1);
+ If Pos1(0)<>'' Then ParseRepoFromUrlArg(Pos1(0));
+ NeedRepo;
+ K:=Ord(OptHas('approve'))+Ord(OptHas('comment'))+Ord(OptHas('request-changes'));
+ If K>1 Then Die2('need exactly one of --approve, --request-changes, or --comment',1);
+ Body:=BodyOpt(HasBody);
+ If K=0 Then Begin
+  If InteractiveOk Then Begin
+   SClear(Opts);SAdd(Opts,'Comment');SAdd(Opts,'Approve');SAdd(Opts,'Request Changes');
+   J:=AskSelect('What kind of review do you want to give?',Opts);
+   Ev_:=IfThen_(J=0,'COMMENT',IfThen_(J=1,'APPROVE','REQUEST_CHANGES'));
+   If not HasBody Then Body:=AskBody('Review body');
+  End
+  Else Die2('--approve, --request-changes, or --comment required when not running interactively',1);
+ End
+ Else Begin
+  If OptHas('approve')Then Ev_:='APPROVE' Else If OptHas('comment')Then Ev_:='COMMENT' Else Ev_:='REQUEST_CHANGES';
+  If(Ev_<>'APPROVE')and(TrimStr(Body)='')Then Die2('body cannot be blank for '+LoStr(ReplaceAll(Ev_,'_',' '))+' review',1);
+ End;
+ Pr:=FindPr(Pos1(0));
+ SClear(F);
+ FS(F,'event',Ev_);
+ If Body<>'' Then FS(F,'body',Body);
+ ApiJ('POST',RepoApi('/pulls/'+IStr(PrNum(Pr))+'/reviews'),ObjOf(F));
+ If Ev_='APPROVE' Then WriteLn(StdErr,#226#156#147' Approved pull request ',RepoFull,'#',PrNum(Pr))
+ Else If Ev_='REQUEST_CHANGES' Then WriteLn(StdErr,#226#156#147' Requested changes to pull request ',RepoFull,'#',PrNum(Pr))
+ Else WriteLn(StdErr,#226#156#147' Reviewed pull request ',RepoFull,'#',PrNum(Pr));
+End;
+
+Procedure CmdPrMerge;
+Var
+ Pr,N,D:LongInt;
+ Method,Body,Subject:AnsiString;
+ HasBody:Boolean;
+ F:TSList;
+ Opts:TSList;
+ R:THttpReq;
+ K:LongInt;
+ Cur:AnsiString;
+ Repo:LongInt;
+ Gq:LongInt;
+ Past:AnsiString;
+Begin
+ CmdBegin('pr merge','[<number> | <url> | <branch>]');
+ Opt('admin','','','Use administrator privileges to merge a pull request that does not meet requirements@@Utilise les privil'+#138+'ges d''administrateur pour fusionner');
+ Opt('author-email','A','text','Email text for merge commit author@@Courriel de l''auteur du commit de fusion');
+ Opt('auto','','','Automatically merge only after necessary requirements are met@@Fusionne automatiquement lorsque les exigences sont satisfaites');
+ Opt('body','b','text','Body text for the merge commit@@Corps du commit de fusion');
+ Opt('body-file','F','file','Read body text from file (use "-" to read from standard input)@@Lit le corps depuis un fichier');
+ Opt('delete-branch','d','','Delete the local and remote branch after merge@@Supprime la branche locale et distante apr'+#138+'s la fusion');
+ Opt('disable-auto','','','Disable auto-merge for this pull request@@D'+#130+'sactive la fusion automatique');
+ Opt('match-head-commit','','SHA','Commit SHA that the pull request head must match to allow merge@@SHA que la t'+#136+'te de la pull request doit avoir');
+ Opt('merge','m','','Merge the commits with the base branch@@Fusionne les commits avec la branche de base');
+ Opt('rebase','r','','Rebase the commits onto the base branch@@Rebase les commits sur la branche de base');
+ OptRepo;
+ Opt('squash','s','','Squash the commits into one commit and merge it into the base branch@@'+#144+'crase les commits en un seul et le fusionne');
+ Opt('subject','t','text','Subject text for the merge commit@@Sujet du commit de fusion');
+ ParseArgs(ArgStart);
+ NeedArgs(0,1);
+ If Pos1(0)<>'' Then ParseRepoFromUrlArg(Pos1(0));
+ NeedRepo;
+ Pr:=FindPr(Pos1(0));
+ N:=PrNum(Pr);
+ K:=Ord(OptHas('merge'))+Ord(OptHas('rebase'))+Ord(OptHas('squash'));
+ If K>1 Then Die2('only one of --merge, --rebase, or --squash can be enabled',1);
+ If PrState(Pr)='MERGED' Then Begin
+  WriteLn(StdErr,'! Pull request ',RepoFull,'#',N,' (',JS(Pr,'title'),') was already merged');
+  Exit;
+ End;
+ If PrState(Pr)='CLOSED' Then Die('X Pull request '+RepoFull+'#'+IStr(N)+' ('+JS(Pr,'title')+') can''t be merged because it was already closed');
+ If OptHas('disable-auto')Then Begin
+  Gql('mutation($id:ID!){disablePullRequestAutoMerge(input:{pullRequestId:$id}){pullRequest{id}}}','{"id":'+JQ(JS(Pr,'node_id'))+'}');
+  WriteLn(StdErr,#226#156#147' Auto-merge disabled for pull request ',RepoFull,'#',N);
+  Exit;
+ End;
+ If OptHas('merge')Then Method:='merge' Else If OptHas('rebase')Then Method:='rebase'
+ Else If OptHas('squash')Then Method:='squash' Else Method:='';
+ If Method='' Then Begin
+  Repo:=ApiJ('GET',RepoApi(''),'');
+  SClear(Opts);
+  If JB(Repo,'allow_merge_commit')Then SAdd(Opts,'Create a merge commit');
+  If JB(Repo,'allow_squash_merge')Then SAdd(Opts,'Squash and merge');
+  If JB(Repo,'allow_rebase_merge')Then SAdd(Opts,'Rebase and merge');
+  If Opts.N=1 Then K:=0
+  Else If InteractiveOk Then K:=AskSelect('What merge method would you like to use?',Opts)
+  Else Die2('--merge, --rebase, or --squash required when not running interactively',1);
+  If Opts.A[K]='Create a merge commit' Then Method:='merge'
+  Else If Opts.A[K]='Squash and merge' Then Method:='squash' Else Method:='rebase';
+ End;
+ If OptHas('auto')Then Begin
+  Gq:=Gql('mutation($id:ID!,$m:PullRequestMergeMethod!){enablePullRequestAutoMerge(input:{pullRequestId:$id,mergeMethod:$m}){pullRequest{id}}}',
+    '{"id":'+JQ(JS(Pr,'node_id'))+',"m":'+JQ(UpStr(Method))+'}');
+  WriteLn(StdErr,#226#156#147' Pull request ',RepoFull,'#',N,' will be automatically merged via ',Method,' when all requirements are met');
+  Exit;
+ End;
+ Body:=BodyOpt(HasBody);
+ If not HasBody Then HasBody:=OptHas('body');
+ SClear(F);
+ FS(F,'merge_method',Method);
+ If OptHas('subject')Then FS(F,'commit_title',OptGet('subject'));
+ If HasBody Then FS(F,'commit_message',Body);
+ If OptHas('match-head-commit')Then FS(F,'sha',OptGet('match-head-commit'));
+ ApiCall(R,'PUT',RepoApi('/pulls/'+IStr(N)+'/merge'),ObjOf(F));
+ If not ApiOk(R)Then Begin
+  If R.Status=405 Then Die('X Pull request '+RepoFull+'#'+IStr(N)+' is not mergeable: '+JS(JParse(R.RespBody),'message'));
+  Die(ErrText(R));
+ End;
+ If Method='merge' Then Past:='Merged' Else If Method='squash' Then Past:='Squashed and merged' Else Past:='Rebased and merged';
+ WriteLn(StdErr,#226#156#147' ',Past,' pull request ',RepoFull,'#',N,' (',JS(Pr,'title'),')');
+ If OptHas('delete-branch')Then Begin
+  Cur:=CurrentBranch;
+  If InGitRepo and(Cur=JS(Pr,'head.ref'))Then Begin
+   GitFg('checkout '+JS(Pr,'base.ref'));
+   GitFg('pull --ff-only');
+  End;
+  If InGitRepo Then GitFg('branch -D '+JS(Pr,'head.ref'));
+  If JS(Pr,'head.repo.full_name')=RepoFull Then
+   ApiJ('DELETE',RepoApi('/git/refs/heads/'+JS(Pr,'head.ref')),'');
+  WriteLn(StdErr,#226#156#147' Deleted branch ',JS(Pr,'head.ref'));
+ End;
+End;
+
+Procedure PrState2(Close:Boolean);
+Var
+ Pr,N:LongInt;
+ F:TSList;
+ Br:AnsiString;
+Begin
+ If Close Then CmdBegin('pr close','{<number> | <url> | <branch>}') Else CmdBegin('pr reopen','{<number> | <url> | <branch>}');
+ Opt('comment','c','string','Leave a closing comment@@Laisse un commentaire');
+ If Close Then Opt('delete-branch','d','','Delete the local and remote branch after close@@Supprime la branche locale et distante apr'+#138+'s la fermeture');
+ OptRepo;
+ ParseArgs(ArgStart);
+ NeedArgs(0,1);
+ If Pos1(0)<>'' Then ParseRepoFromUrlArg(Pos1(0));
+ NeedRepo;
+ Pr:=FindPr(Pos1(0));
+ N:=PrNum(Pr);
+ If PrState(Pr)='MERGED' Then Die('X Pull request '+RepoFull+'#'+IStr(N)+' ('+JS(Pr,'title')+') can''t be '+IfThen_(Close,'closed','reopened')+' because it was already merged');
+ If(PrState(Pr)='CLOSED')=Close Then Begin
+  WriteLn(StdErr,'! Pull request ',RepoFull,'#',N,' (',JS(Pr,'title'),') is already ',IfThen_(Close,'closed','open'));
+  Exit;
+ End;
+ If OptHas('comment')Then AddComment(N,OptGet('comment'));
+ ApiJ('PATCH',RepoApi('/pulls/'+IStr(N)),'{"state":'+JQ(IfThen_(Close,'closed','open'))+'}');
+ WriteLn(StdErr,#226#156#147' ',IfThen_(Close,'Closed','Reopened'),' pull request ',RepoFull,'#',N,' (',JS(Pr,'title'),')');
+ If Close and OptHas('delete-branch')Then Begin
+  Br:=JS(Pr,'head.ref');
+  If JS(Pr,'head.repo.full_name')=RepoFull Then ApiJ('DELETE',RepoApi('/git/refs/heads/'+Br),'');
+  If InGitRepo and(CurrentBranch<>Br)Then GitFg('branch -D '+Br);
+  WriteLn(StdErr,#226#156#147' Deleted branch ',Br);
+ End;
+End;
+
+Procedure CmdPrClose;
+Begin
+ PrState2(True);
+End;
+
+Procedure CmdPrReopen;
+Begin
+ PrState2(False);
+End;
+
+Procedure CmdPrComment;
+Var
+ Pr,N,J,Cnt_:LongInt;
+ Body,Me_:AnsiString;
+ HasBody:Boolean;
+ L:TIList;
+Begin
+ CmdBegin('pr comment','[<number> | <url> | <branch>]');
+ Opt('body','b','string','The comment body text@@Le texte du commentaire');
+ Opt('body-file','F','file','Read body text from file (use "-" to read from standard input)@@Lit le corps depuis un fichier');
+ Opt('create-if-none','','','Create a new comment if no comments are found. Can be used only with --edit-last@@Cr'+#130+'e un commentaire s''il n''y en a pas');
+ Opt('delete-last','','','Delete the last comment of the current user@@Supprime le dernier commentaire de l''utilisateur');
+ Opt('edit-last','','','Edit the last comment of the current user@@Modifie le dernier commentaire de l''utilisateur');
+ Opt('editor','e','','Skip prompts and open the text editor to write the body in@@Ouvre l'''+#130+'diteur de texte pour '+#130+'crire le corps');
+ OptRepo;
+ Opt('web','w','','Open the web browser to write the comment@@Ouvre le navigateur pour '+#130+'crire le commentaire');
+ Opt('yes','','','Skip the delete confirmation prompt when --delete-last is provided@@Ignore la confirmation de --delete-last');
+ ParseArgs(ArgStart);
+ NeedArgs(0,1);
+ If Pos1(0)<>'' Then ParseRepoFromUrlArg(Pos1(0));
+ NeedRepo;
+ Pr:=FindPr(Pos1(0));
+ N:=PrNum(Pr);
+ If OptHas('web')Then Begin OpenWeb(JS(Pr,'html_url')+'#issuecomment-new');Exit;End;
+ Body:=BodyOpt(HasBody);
+ If OptHas('delete-last')or OptHas('edit-last')Then Begin
+  ApiPagedQ(RepoApi('/issues/'+IStr(N)+'/comments'),0,'',L);
+  J:=-1;Me_:=CurrentUser;
+  Cnt_:=L.N-1;
+  While Cnt_>=0 do Begin
+   If JS(L.A[Cnt_],'user.login')=Me_ Then Begin J:=L.A[Cnt_];Break;End;
+   Dec(Cnt_);
+  End;
+  If J<0 Then Begin
+   If not(OptHas('create-if-none')and OptHas('edit-last'))Then Die('no comments found for current user');
+  End
+  Else Begin
+   If OptHas('delete-last')Then Begin
+    ApiJ('DELETE',RepoApi('/issues/comments/'+IStr(JI(J,'id'))),'');
+    WriteLn(StdErr,#226#156#147' Comment deleted');
+    Exit;
+   End;
+   If not HasBody Then Body:=EditText(JS(J,'body'),'.md');
+   J:=ApiJ('PATCH',RepoApi('/issues/comments/'+IStr(JI(J,'id'))),'{"body":'+JQ(Body)+'}');
+   WriteLn(JS(J,'html_url'));
+   Exit;
+  End;
+ End;
+ If not HasBody Then Begin
+  If OptHas('editor')Then Body:=EditText('','.md')
+  Else If InteractiveOk Then Body:=AskBody('Body')
+  Else Die2('flag `--body` or `--body-file` required when not running interactively',1);
+ End;
+ If TrimStr(Body)='' Then Die2('aborted: empty comment body',1);
+ J:=ApiJ('POST',RepoApi('/issues/'+IStr(N)+'/comments'),'{"body":'+JQ(Body)+'}');
+ WriteLn(JS(J,'html_url'));
+End;
+
+Procedure CmdPrEdit;
+Var
+ Pr,N,J:LongInt;
+ F,F2:TSList;
+ Body:AnsiString;
+ HasBody:Boolean;
+ Add,Rem,Revs,Teams:TSList;
+Begin
+ CmdBegin('pr edit','[<number> | <url> | <branch>]');
+ Opt('add-assignee','','*login','Add assigned users by their login. Use "@me" to assign yourself.@@Ajoute des personnes assign'+#130+'es.');
+ Opt('add-label','','*name','Add labels by name@@Ajoute des '+#130+'tiquettes par nom');
+ Opt('add-project','','*title','Add the pull request to projects by title@@Ajoute la pull request '+#133+' des projets');
+ Opt('add-reviewer','','*login','Add reviewers by their login.@@Ajoute des r'+#130+'viseurs.');
+ Opt('base','B','branch','Change the base branch for this pull request@@Change la branche de base');
+ Opt('body','b','string','Set the new body.@@D'+#130+'finit le nouveau corps.');
+ Opt('body-file','F','file','Read body text from file (use "-" to read from standard input)@@Lit le corps depuis un fichier');
+ Opt('milestone','m','name','Edit the milestone the pull request belongs to by name@@Modifie le jalon');
+ Opt('remove-assignee','','*login','Remove assigned users by their login.@@Retire des personnes assign'+#130+'es.');
+ Opt('remove-label','','*name','Remove labels by name@@Retire des '+#130+'tiquettes par nom');
+ Opt('remove-milestone','','','Remove the milestone association from the pull request@@Retire le jalon');
+ Opt('remove-project','','*title','Remove the pull request from projects by title@@Retire la pull request de projets');
+ Opt('remove-reviewer','','*login','Remove reviewers by their login.@@Retire des r'+#130+'viseurs.');
+ OptRepo;
+ Opt('title','t','string','Set the new title.@@D'+#130+'finit le nouveau titre.');
+ ParseArgs(ArgStart);
+ NeedArgs(0,1);
+ If Pos1(0)<>'' Then ParseRepoFromUrlArg(Pos1(0));
+ NeedRepo;
+ Pr:=FindPr(Pos1(0));
+ N:=PrNum(Pr);
+ Body:=BodyOpt(HasBody);
+ SClear(F);
+ If OptHas('title')Then FS(F,'title',OptGet('title'));
+ If HasBody Then FS(F,'body',Body);
+ If OptHas('base')Then FS(F,'base',OptGet('base'));
+ If F.N>0 Then ApiJ('PATCH',RepoApi('/pulls/'+IStr(N)),ObjOf(F));
+ SClear(F2);
+ If OptHas('milestone')Then FN(F2,'milestone',MilestoneNumber(OptGet('milestone')));
+ If OptHas('remove-milestone')Then FR(F2,'milestone','null');
+ If F2.N>0 Then ApiJ('PATCH',RepoApi('/issues/'+IStr(N)),ObjOf(F2));
+ OptCsv('add-label',Add);
+ If Add.N>0 Then ApiJ('POST',RepoApi('/issues/'+IStr(N)+'/labels'),'{"labels":'+StrArr(Add)+'}');
+ OptCsv('remove-label',Rem);
+ For J:=0 to Rem.N-1 do ApiJ('DELETE',RepoApi('/issues/'+IStr(N)+'/labels/'+PathEnc(Rem.A[J])),'');
+ OptCsv('add-assignee',Add);
+ For J:=0 to Add.N-1 do Add.A[J]:=ResolveMe(Add.A[J]);
+ If Add.N>0 Then ApiJ('POST',RepoApi('/issues/'+IStr(N)+'/assignees'),'{"assignees":'+StrArr(Add)+'}');
+ OptCsv('remove-assignee',Rem);
+ For J:=0 to Rem.N-1 do Rem.A[J]:=ResolveMe(Rem.A[J]);
+ If Rem.N>0 Then ApiJ('DELETE',RepoApi('/issues/'+IStr(N)+'/assignees'),'{"assignees":'+StrArr(Rem)+'}');
+ OptCsv('add-reviewer',Add);
+ If Add.N>0 Then Begin
+  SClear(Revs);SClear(Teams);
+  For J:=0 to Add.N-1 do
+   If Pos('/',Add.A[J])>0 Then SAdd(Teams,Copy(Add.A[J],Pos('/',Add.A[J])+1,Length(Add.A[J]))) Else SAdd(Revs,ResolveMe(Add.A[J]));
+  ApiJ('POST',RepoApi('/pulls/'+IStr(N)+'/requested_reviewers'),'{"reviewers":'+StrArr(Revs)+',"team_reviewers":'+StrArr(Teams)+'}');
+ End;
+ OptCsv('remove-reviewer',Rem);
+ If Rem.N>0 Then Begin
+  SClear(Revs);SClear(Teams);
+  For J:=0 to Rem.N-1 do
+   If Pos('/',Rem.A[J])>0 Then SAdd(Teams,Copy(Rem.A[J],Pos('/',Rem.A[J])+1,Length(Rem.A[J]))) Else SAdd(Revs,ResolveMe(Rem.A[J]));
+  ApiJ('DELETE',RepoApi('/pulls/'+IStr(N)+'/requested_reviewers'),'{"reviewers":'+StrArr(Revs)+',"team_reviewers":'+StrArr(Teams)+'}');
+ End;
+ WriteLn(JS(Pr,'html_url'));
+End;
+
+Procedure CmdPrReady;
+Var
+ Pr:LongInt;
+ Undo:Boolean;
+Begin
+ CmdBegin('pr ready','[<number> | <url> | <branch>]');
+ OptRepo;
+ Opt('undo','','','Convert a pull request to "draft"@@Convertit la pull request en brouillon');
+ ParseArgs(ArgStart);
+ NeedArgs(0,1);
+ If Pos1(0)<>'' Then ParseRepoFromUrlArg(Pos1(0));
+ NeedRepo;
+ Pr:=FindPr(Pos1(0));
+ Undo:=OptHas('undo');
+ If PrState(Pr)<>'OPEN' Then Die('X Pull request '+RepoFull+'#'+IStr(PrNum(Pr))+' is '+LoStr(PrState(Pr))+' and can''t be marked');
+ If Undo=JB(Pr,'draft')Then Begin
+  WriteLn(StdErr,'! Pull request ',RepoFull,'#',PrNum(Pr),' is already ',IfThen_(Undo,'"draft"','"ready for review"'));
+  Exit;
+ End;
+ If Undo Then Gql('mutation($id:ID!){convertPullRequestToDraft(input:{pullRequestId:$id}){pullRequest{id}}}','{"id":'+JQ(JS(Pr,'node_id'))+'}')
+ Else Gql('mutation($id:ID!){markPullRequestReadyForReview(input:{pullRequestId:$id}){pullRequest{id}}}','{"id":'+JQ(JS(Pr,'node_id'))+'}');
+ WriteLn(StdErr,#226#156#147' Pull request ',RepoFull,'#',PrNum(Pr),' is marked as ',IfThen_(Undo,'"draft"','"ready for review"'));
+End;
+
+Procedure CmdPrChecks;
+Var
+ Pr:LongInt;
+ Rows,Spec:TSList;
+ C:TSList;
+ I,Pass,Fail,Pend,Skip,Canc:LongInt;
+ Out_:TSList;
+ Jl:TSList;
+ O:TSList;
+ Interval:LongInt;
+ Done:Boolean;
+ Mark:AnsiString;
+Begin
+ CmdBegin('pr checks','[<number> | <url> | <branch>]');
+ Opt('fail-fast','','','Exit watch mode on first check failure@@Quitte le mode de surveillance au premier '+#130+'chec');
+ Opt('interval','i','seconds','Refresh interval in seconds when using `--watch` flag (default 10)@@Intervalle de rafra'+#140+'chissement avec --watch (d'+#130+'faut 10)');
+ OptRepo;
+ Opt('required','','','Only show checks that are required@@Affiche seulement les contr'+#147+'les requis');
+ Opt('watch','','','Watch checks until they finish@@Surveille les contr'+#147+'les jusqu'''+#133+' leur fin');
+ OptWeb('Open the web browser to show details about checks@@Ouvre le navigateur pour afficher les d'+#130+'tails des contr'+#147+'les');
+ OptJsonAll;
+ CmdJson('bucket,completedAt,description,event,link,name,startedAt,state,workflow');
+ ParseArgs(ArgStart);
+ NeedArgs(0,1);
+ JsonSetup('bucket,completedAt,description,event,link,name,startedAt,state,workflow');
+ If Pos1(0)<>'' Then ParseRepoFromUrlArg(Pos1(0));
+ NeedRepo;
+ Pr:=FindPr(Pos1(0));
+ If OptHas('web')Then Begin OpenWeb(JS(Pr,'html_url')+'/checks');Exit;End;
+ Interval:=OptInt('interval',10);
+ Repeat
+  FetchChecks(JS(Pr,'head.sha'),Rows);
+  Pass:=0;Fail:=0;Pend:=0;Skip:=0;Canc:=0;
+  For I:=0 to Rows.N-1 do Begin
+   SplitStr(Rows.A[I],#9,C);
+   If C.A[1]='pass' Then Inc(Pass) Else If C.A[1]='fail' Then Inc(Fail) Else If C.A[1]='skipping' Then Inc(Skip)
+   Else If C.A[1]='cancel' Then Inc(Canc) Else Inc(Pend);
+  End;
+  Done:=(Pend=0)or not OptHas('watch')or(OptHas('fail-fast')and(Fail>0));
+  If not Done Then SleepSec(Interval);
+ Until Done;
+ If UseJson Then Begin
+  SClear(Jl);
+  For I:=0 to Rows.N-1 do Begin
+   SplitStr(Rows.A[I],#9,C);
+   SClear(O);
+   FS(O,'bucket',C.A[1]);FS(O,'completedAt',C.A[7]);FS(O,'description',C.A[4]);FS(O,'event','pull_request');
+   FS(O,'link',C.A[3]);FS(O,'name',C.A[0]);FS(O,'startedAt',C.A[6]);
+   If C.A[1]='pass' Then FS(O,'state','SUCCESS') Else If C.A[1]='fail' Then FS(O,'state','FAILURE')
+   Else If C.A[1]='skipping' Then FS(O,'state','SKIPPED') Else If C.A[1]='cancel' Then FS(O,'state','CANCELLED')
+   Else FS(O,'state','PENDING');
+   FS(O,'workflow',C.A[5]);
+   SAdd(Jl,ObjOf(O));
+  End;
+  EmitJson('['+JoinList(Jl,',')+']');
+ End
+ Else Begin
+  If Rows.N=0 Then Begin WriteLn(StdErr,'no checks reported on the ''',JS(Pr,'head.ref'),''' branch');Halt(1);End;
+  If OutTTY Then Begin
+   If Fail>0 Then WriteLn('Some checks were not successful')
+   Else If Pend>0 Then WriteLn('Some checks are still pending')
+   Else WriteLn('All checks were successful');
+   WriteLn(Canc,' cancelled, ',Fail,' failing, ',Pass,' successful, ',Skip,' skipped, and ',Pend,' pending checks');
+   WriteLn;
+  End;
+  TblBegin('');
+  For I:=0 to Rows.N-1 do Begin
+   SplitStr(Rows.A[I],#9,C);
+   If OutTTY Then Begin
+    If C.A[1]='pass' Then Mark:=#226#156#147 Else If C.A[1]='fail' Then Mark:='X' Else If C.A[1]='pending' Then Mark:='*'
+    Else Mark:='-';
+    TblRow(Mark+#9+C.A[0]+#9+C.A[2]+#9+C.A[3]);
+   End
+   Else TblRow(C.A[0]+#9+C.A[1]+#9+C.A[2]+#9+C.A[3]+#9+C.A[4]);
+  End;
+  TblPrint;
+ End;
+ If Fail>0 Then Halt(1);
+ If Pend>0 Then Halt(8);
+End;
+
+Procedure CmdPrStatus;
+Var
+ L:TIList;
+ T:Int64;
+ I,Pr:LongInt;
+ Br:AnsiString;
+ R:THttpReq;
+ Cur:TIList;
+ Titles,Queries:TSList;
+ Secs:Integer;
+Begin
+ CmdBegin('pr status','');
+ Opt('conflict-status','c','','Display the merge conflict status of each pull request@@Affiche l'''+#130+'tat des conflits de chaque pull request');
+ OptRepo;OptJsonAll;
+ CmdJson(PrFields);
+ ParseArgs(ArgStart);
+ NeedArgs(0,0);
+ NeedRepo;
+ WriteLn;
+ WriteLn('Relevant pull requests in ',RepoFull);
+ WriteLn;
+ WriteLn('Current branch');
+ Br:=CurrentBranch;
+ Cur.N:=0;
+ If Br<>'' Then ApiPagedQ(RepoApi('/pulls?state=open&head='+UrlEnc(RepoOwner+':'+Br,False)),1,'',Cur);
+ If Cur.N>0 Then WriteLn('  #',JI(Cur.A[0],'number'),'  ',JS(Cur.A[0],'title'),' [',Br,']')
+ Else WriteLn('  There is no pull request associated with ',IfThen_(Br<>'','['+Br+']','the current branch'));
+ WriteLn;
+ SClear(Titles);SClear(Queries);
+ SAdd(Titles,'Created by you');SAdd(Queries,'author:@me');
+ SAdd(Titles,'Requesting a code review from you');SAdd(Queries,'review-requested:@me');
+ For Secs:=0 to 1 do Begin
+  WriteLn(Titles.A[Secs]);
+  ApiPaged('/search/issues?q='+UrlEnc('repo:'+RepoFull+' is:pr is:open '+Queries.A[Secs],False),10,'items',L,T);
+  If L.N=0 Then WriteLn('  You have no open pull requests'+IfThen_(Secs=1,' requesting your review',''))
+  Else For I:=0 to L.N-1 do WriteLn('  #',JI(L.A[I],'number'),'  ',JS(L.A[I],'title'));
+  WriteLn;
+ End;
+End;
+
+Procedure PrLock(Lock:Boolean);
+Var
+ Pr,N:LongInt;
+ Reason:AnsiString;
+ F:TSList;
+Begin
+ If Lock Then CmdBegin('pr lock','{<number> | <url>}') Else CmdBegin('pr unlock','{<number> | <url>}');
+ If Lock Then Opt('reason','r','string','Optional reason for locking conversation (off_topic, resolved, spam, too_heated).@@Raison facultative du verrouillage.');
+ OptRepo;
+ ParseArgs(ArgStart);
+ NeedArgs(1,1);
+ ParseRepoFromUrlArg(Pos1(0));
+ N:=ParseNumArg(Pos1(0),'pull request');
+ NeedRepo;
+ If Lock Then Begin
+  SClear(F);
+  Reason:=OptGet('reason');
+  If Reason<>'' Then FS(F,'lock_reason',Reason);
+  ApiJ('PUT',RepoApi('/issues/'+IStr(N)+'/lock'),ObjOf(F));
+  WriteLn(StdErr,#226#156#147' Locked conversation in pull request ',RepoFull,'#',N);
+ End
+ Else Begin
+  ApiJ('DELETE',RepoApi('/issues/'+IStr(N)+'/lock'),'');
+  WriteLn(StdErr,#226#156#147' Unlocked conversation in pull request ',RepoFull,'#',N);
+ End;
+End;
+
+Procedure CmdPrLock;
+Begin
+ PrLock(True);
+End;
+
+Procedure CmdPrUnlock;
+Begin
+ PrLock(False);
+End;
+
+Procedure CmdPrRevert;
+Var
+ Pr,D:LongInt;
+ Title,Body:AnsiString;
+ HasBody:Boolean;
+Begin
+ CmdBegin('pr revert','{<number> | <url> | <branch>}');
+ Opt('body','b','string','Body for the revert pull request@@Corps de la pull request d''annulation');
+ Opt('body-file','F','file','Read body text from file (use "-" to read from standard input)@@Lit le corps depuis un fichier');
+ Opt('draft','d','','Mark revert pull request as a draft@@Marque la pull request d''annulation comme brouillon');
+ OptRepo;
+ Opt('title','t','string','Title for the revert pull request@@Titre de la pull request d''annulation');
+ ParseArgs(ArgStart);
+ NeedArgs(1,1);
+ ParseRepoFromUrlArg(Pos1(0));
+ NeedRepo;
+ Pr:=FindPr(Pos1(0));
+ If PrState(Pr)<>'MERGED' Then Die('X Pull request '+RepoFull+'#'+IStr(PrNum(Pr))+' ('+JS(Pr,'title')+') can''t be reverted because it has not been merged');
+ Body:=BodyOpt(HasBody);
+ Title:=OptGet('title');
+ D:=Gql('mutation($id:ID!,$t:String,$b:String,$d:Boolean){revertPullRequest(input:{pullRequestId:$id,title:$t,body:$b,draft:$d}){revertPullRequest{url number}}}',
+   '{"id":'+JQ(JS(Pr,'node_id'))+',"t":'+IfThen_(Title<>'',JQ(Title),'null')+',"b":'+IfThen_(HasBody,JQ(Body),'null')+',"d":'+JBool(OptHas('draft'))+'}');
+ WriteLn(StdErr,#226#156#147' Created pull request ',RepoFull,'#',JI(D,'revertPullRequest.revertPullRequest.number'),' that reverts ',RepoFull,'#',PrNum(Pr));
+ WriteLn(JS(D,'revertPullRequest.revertPullRequest.url'));
+End;
+
+Procedure CmdPrUpdateBranch;
+Var
+ Pr:LongInt;
+ R:THttpReq;
+ F:TSList;
+ D:LongInt;
+Begin
+ CmdBegin('pr update-branch','[<number> | <url> | <branch>]');
+ OptRepo;
+ Opt('rebase','','','Update PR branch by rebasing on top of latest base branch@@Met '+#133+' jour la branche par rebase sur la derni'+#138+'re base');
+ ParseArgs(ArgStart);
+ NeedArgs(0,1);
+ If Pos1(0)<>'' Then ParseRepoFromUrlArg(Pos1(0));
+ NeedRepo;
+ Pr:=FindPr(Pos1(0));
+ If OptHas('rebase')Then Begin
+  Gql('mutation($id:ID!,$sha:GitObjectID){updatePullRequestBranch(input:{pullRequestId:$id,expectedHeadOid:$sha,updateMethod:REBASE}){pullRequest{id}}}',
+    '{"id":'+JQ(JS(Pr,'node_id'))+',"sha":'+JQ(JS(Pr,'head.sha'))+'}');
+ End
+ Else Begin
+  SClear(F);FS(F,'expected_head_sha',JS(Pr,'head.sha'));
+  ApiCall(R,'PUT',RepoApi('/pulls/'+IStr(PrNum(Pr))+'/update-branch'),ObjOf(F));
+  If not ApiOk(R)Then Begin
+   If(R.Status=422)and(Pos('already',LoStr(R.RespBody))>0)Then Begin WriteLn(StdErr,#226#156#147' PR branch already up-to-date');Exit;End;
+   Die(ErrText(R));
+  End;
+ End;
+ WriteLn(StdErr,#226#156#147' PR branch update scheduled');
+End;
+{ ------------------------------------------------------------------ }
+{ gh workflow, gh run, gh cache                                       }
+{ ------------------------------------------------------------------ }
+
+Const
+ WorkflowFields='id,name,path,state';
+ WorkflowSpec='id=id:n;name=name:s;path=path:s;state=state:s';
+ RunFields='attempt,conclusion,createdAt,databaseId,displayTitle,event,headBranch,headSha,jobs,name,number,startedAt,'+
+  'status,updatedAt,url,workflowDatabaseId,workflowName';
+ RunSpec='attempt=run_attempt:n;conclusion=conclusion:s;createdAt=created_at:s;databaseId=id:n;'+
+  'displayTitle=display_title:s;event=event:s;headBranch=head_branch:s;headSha=head_sha:s;name=name:s;'+
+  'number=run_number:n;startedAt=run_started_at:s;status=status:s;updatedAt=updated_at:s;url=html_url:s;'+
+  'workflowDatabaseId=workflow_id:n;workflowName=name:s';
+ CacheFields='createdAt,id,key,lastAccessedAt,ref,sizeInBytes,version';
+ CacheSpec='createdAt=created_at:s;id=id:n;key=key:s;lastAccessedAt=last_accessed_at:s;ref=ref:s;sizeInBytes=size_in_bytes:n;'+
+  'version=version:s';
+
+Function JobsJson(RunId:LongInt):AnsiString;
+Var
+ L:TIList;
+ I,K:LongInt;
+ O:TSList;
+ R:TSList;
+ St:TSList;
+ S:LongInt;
+ T:Int64;
+Begin
+ ApiPaged(RepoApi('/actions/runs/'+IStr(RunId)+'/jobs'),0,'jobs',L,T);
+ SClear(R);
+ For I:=0 to L.N-1 do Begin
+  SClear(O);
+  FS(O,'completedAt',JS(L.A[I],'completed_at'));
+  FS(O,'conclusion',JS(L.A[I],'conclusion'));
+  FN(O,'databaseId',JI(L.A[I],'id'));
+  FS(O,'name',JS(L.A[I],'name'));
+  FS(O,'startedAt',JS(L.A[I],'started_at'));
+  FS(O,'status',JS(L.A[I],'status'));
+  SClear(St);
+  S:=JGet(L.A[I],'steps');
+  If S>=0 Then Begin
+   K:=JP[S].First;
+   While K>=0 do Begin
+    SAdd(St,'{"conclusion":'+JQ(JS(K,'conclusion'))+',"name":'+JQ(JS(K,'name'))+',"number":'+IStr(JI(K,'number'))+
+      ',"status":'+JQ(JS(K,'status'))+'}');
+    K:=JP[K].Next;
+   End;
+  End;
+  FR(O,'steps','['+JoinList(St,',')+']');
+  FS(O,'url',JS(L.A[I],'html_url'));
+  SAdd(R,ObjOf(O));
+ End;
+ JobsJson:='['+JoinList(R,',')+']';
+End;
+
+Function RunHook(Node:LongInt;Const F:AnsiString;Var Out_:AnsiString):Boolean;
+Begin
+ RunHook:=False;
+ If F='jobs' Then Begin Out_:=JobsJson(JI(Node,'id'));RunHook:=True;End;
+End;
+
+{ trouve un workflow par identifiant, nom ou nom de fichier ; renvoie le noeud }
+Function FindWorkflow(Const Sel:AnsiString):LongInt;
+Var
+ L:TIList;
+ I:LongInt;
+ T:Int64;
+ S:AnsiString;
+Begin
+ ApiPaged(RepoApi('/actions/workflows'),0,'workflows',L,T);
+ If ToInt(Sel,-1)>0 Then Begin
+  For I:=0 to L.N-1 do If JI(L.A[I],'id')=ToInt(Sel,0)Then Begin FindWorkflow:=L.A[I];Exit;End;
+ End;
+ For I:=0 to L.N-1 do Begin
+  S:=JS(L.A[I],'path');
+  If(JS(L.A[I],'name')=Sel)or(BaseName(S)=Sel)or(S=Sel)Then Begin FindWorkflow:=L.A[I];Exit;End;
+ End;
+ Die('could not find any workflows named '+Sel);
+ FindWorkflow:=-1;
+End;
+
+Procedure CmdWorkflowList;
+Var
+ L,Keep:TIList;
+ I,Lim:LongInt;
+ T:Int64;
+ St:AnsiString;
+Begin
+ CmdBegin('workflow list','');
+ CmdAlias('ls');
+ Opt('all','a','','Include disabled workflows@@Inclut les workflows d'+#130+'sactiv'+#130+'s');
+ OptLimitN('Maximum number of workflows to fetch',50);
+ OptRepo;OptJsonAll;
+ CmdJson(WorkflowFields);
+ ParseArgs(ArgStart);
+ NeedArgs(0,0);
+ JsonSetup(WorkflowFields);
+ NeedRepo;
+ Lim:=OptInt('limit',50);
+ ApiPaged(RepoApi('/actions/workflows'),0,'workflows',L,T);
+ Keep.N:=0;
+ For I:=0 to L.N-1 do
+  If(OptHas('all')or(JS(L.A[I],'state')='active'))and(Keep.N<Lim)Then IAdd(Keep,L.A[I]);
+ If UseJson Then Begin EmitItems(Keep,WorkflowSpec,Nil);Exit;End;
+ If Keep.N=0 Then Begin WriteLn(StdErr,'No workflows found');Halt(1);End;
+ TblBegin('');
+ For I:=0 to Keep.N-1 do Begin
+  St:=JS(Keep.A[I],'state');
+  If St='disabled_manually' Then St:='disabled_manually';
+  TblRow(JS(Keep.A[I],'name')+#9+St+#9+IStr(JI(Keep.A[I],'id')));
+ End;
+ TblPrint;
+End;
+
+Function RunMark(Node:LongInt):AnsiString;
+Var
+ St,C:AnsiString;
+Begin
+ St:=JS(Node,'status');C:=JS(Node,'conclusion');
+ If St<>'completed' Then RunMark:='*'
+ Else If C='success' Then RunMark:=#226#156#147
+ Else If(C='skipped')or(C='cancelled')or(C='neutral')Then RunMark:='-'
+ Else RunMark:='X';
+End;
+
+Procedure CmdWorkflowView;
+Var
+ W,J,I:LongInt;
+ L:TIList;
+ T:Int64;
+ Sel:AnsiString;
+ R:THttpReq;
+Begin
+ CmdBegin('workflow view','[<workflow-id> | <workflow-name> | <filename>]');
+ OptRepo;
+ Opt('ref','r','string','The branch or tag name which contains the version of the workflow file you''d like to view@@Branche ou tag contenant la version du fichier de workflow');
+ OptWeb('Open workflow in the browser@@Ouvre le workflow dans le navigateur');
+ Opt('yaml','y','','View the workflow yaml file@@Affiche le fichier YAML du workflow');
+ ParseArgs(ArgStart);
+ NeedArgs(0,1);
+ NeedRepo;
+ Sel:=Pos1(0);
+ If Sel='' Then Begin
+  If InteractiveOk Then Sel:=AskLine('Workflow name or file','') Else Die2('workflow ID, name, or filename required when not running interactively',1);
+ End;
+ W:=FindWorkflow(Sel);
+ If OptHas('web')Then Begin OpenWeb(JS(W,'html_url'));Exit;End;
+ If OptHas('yaml')Then Begin
+  ReqInit(R,'GET',ApiUrl(RepoApi('/contents/'+UrlEnc(JS(W,'path'),True))+IfThen_(OptHas('ref'),'?ref='+UrlEnc(OptGet('ref'),False),'')),TokenOf(ApiHost));
+  R.Headers:='Accept: application/vnd.github.raw'#13#10;
+  HttpDo(R);
+  If not ApiOk(R)Then Die(ErrText(R));
+  WriteLn(JS(W,'name'),' - ',BaseName(JS(W,'path')));
+  WriteLn('ID: ',JI(W,'id'));
+  WriteLn;
+  Write(R.RespBody);
+  Exit;
+ End;
+ WriteLn(JS(W,'name'),' - ',BaseName(JS(W,'path')));
+ WriteLn('ID: ',JI(W,'id'));
+ WriteLn;
+ ApiPaged(RepoApi('/actions/workflows/'+IStr(JI(W,'id'))+'/runs'),5,'workflow_runs',L,T);
+ WriteLn('Total runs ',T);
+ WriteLn('Recent runs');
+ For I:=0 to L.N-1 do
+  WriteLn('  ',RunMark(L.A[I]),' ',JS(L.A[I],'display_title'),'  ',JS(L.A[I],'head_branch'),'  ',JS(L.A[I],'event'),'  ',JI(L.A[I],'id'));
+ WriteLn;
+ WriteLn('To see more runs for this workflow, try: gh run list --workflow ',BaseName(JS(W,'path')));
+ WriteLn('To see the YAML for this workflow, try: gh workflow view ',BaseName(JS(W,'path')),' --yaml');
+End;
+
+Procedure CmdWorkflowRun;
+Var
+ W:LongInt;
+ Ref,Sel,Kv,Key,V,Body:AnsiString;
+ Raw,Typed:TSList;
+ Inputs:LongInt;
+ F:TSList;
+ I,P:LongInt;
+ Txt:AnsiString;
+ N:LongInt;
+Begin
+ CmdBegin('workflow run','[<workflow-id> | <workflow-name>]');
+ Opt('field','F','*key=value','Add a string parameter in key=value format, respecting @ syntax (see "gh help api").@@Ajoute un param'+#138+'tre au format cl'+#130+'=valeur, avec la syntaxe @ (voir "gh help api").');
+ Opt('json','','','Read workflow inputs as JSON via STDIN@@Lit les entr'+#130+'es du workflow en JSON sur l''entr'+#130+'e standard');
+ Opt('raw-field','f','*key=value','Add a string parameter in key=value format@@Ajoute un param'+#138+'tre texte au format cl'+#130+'=valeur');
+ Opt('ref','r','string','Branch or tag name which contains the version of the workflow file you''d like to run@@Branche ou tag contenant la version du workflow');
+ OptRepo;
+ ParseArgs(ArgStart);
+ NeedArgs(0,1);
+ NeedRepo;
+ Sel:=Pos1(0);
+ If Sel='' Then Begin
+  If InteractiveOk Then Sel:=AskLine('Workflow name or file','') Else Die2('workflow ID or name required when not running interactively',1);
+ End;
+ W:=FindWorkflow(Sel);
+ Ref:=OptGet('ref');
+ If Ref='' Then Ref:=JS(ApiJ('GET',RepoApi(''),''),'default_branch');
+ Inputs:=MkObj;
+ If OptHas('json')Then Begin
+  Txt:=ReadStdin;
+  Inputs:=JParse(Txt);
+  If Inputs<0 Then Die('failed to parse JSON input');
+ End
+ Else Begin
+  OptList('raw-field',Raw);OptList('field',Typed);
+  For I:=0 to Raw.N+Typed.N-1 do Begin
+   If I<Raw.N Then Kv:=Raw.A[I] Else Kv:=Typed.A[I-Raw.N];
+   P:=Pos('=',Kv);
+   If P=0 Then Die('field '+Kv+' requires a value separated by an ''='' sign');
+   Key:=Copy(Kv,1,P-1);V:=Copy(Kv,P+1,Length(Kv));
+   If(I>=Raw.N)and(V<>'')and(V[1]='@')Then Begin
+    If not ReadAll(Copy(V,2,Length(V)),Txt)Then Die('open '+Copy(V,2,Length(V))+': no such file or directory');
+    V:=Txt;
+   End;
+   ObjSet(Inputs,Key,MkStr(V));
+  End;
+ End;
+ Body:='{"ref":'+JQ(Ref)+',"inputs":'+RawJson(Inputs)+'}';
+ ApiJ('POST',RepoApi('/actions/workflows/'+IStr(JI(W,'id'))+'/dispatches'),Body);
+ WriteLn(StdErr,#226#156#147' Created workflow_dispatch event for ',BaseName(JS(W,'path')),' at ',Ref);
+ WriteLn(StdErr);
+ WriteLn(StdErr,'To see runs for this workflow, try: gh run list --workflow=',BaseName(JS(W,'path')));
+End;
+
+Procedure WorkflowToggle(Enable:Boolean);
+Var
+ W:LongInt;
+ Sel:AnsiString;
+Begin
+ If Enable Then CmdBegin('workflow enable','[<workflow-id> | <workflow-name>]') Else CmdBegin('workflow disable','[<workflow-id> | <workflow-name>]');
+ OptRepo;
+ ParseArgs(ArgStart);
+ NeedArgs(0,1);
+ NeedRepo;
+ Sel:=Pos1(0);
+ If Sel='' Then Begin
+  If InteractiveOk Then Sel:=AskLine('Workflow name or file','') Else Die2('workflow ID or name required when not running interactively',1);
+ End;
+ W:=FindWorkflow(Sel);
+ ApiJ('PUT',RepoApi('/actions/workflows/'+IStr(JI(W,'id'))+IfThen_(Enable,'/enable','/disable')),'');
+ WriteLn(StdErr,#226#156#147' ',IfThen_(Enable,'Enabled ','Disabled '),JS(W,'name'));
+End;
+
+Procedure CmdWorkflowEnable;
+Begin
+ WorkflowToggle(True);
+End;
+
+Procedure CmdWorkflowDisable;
+Begin
+ WorkflowToggle(False);
+End;
+
+{ ---------- run ---------- }
+
+Function RunElapsed(Node:LongInt):AnsiString;
+Var
+ D:Int64;
+ S:AnsiString;
+Begin
+ D:=IsoToEpoch(JS(Node,'updated_at'))-IsoToEpoch(JS(Node,'run_started_at'));
+ If D<0 Then D:=0;
+ S:='';
+ If D>=3600 Then S:=IStr(D div 3600)+'h';
+ If D>=60 Then S:=S+IStr((D mod 3600)div 60)+'m';
+ S:=S+IStr(D mod 60)+'s';
+ RunElapsed:=S;
+End;
+
+Procedure CmdRunList;
+Var
+ L:TIList;
+ I,Lim:LongInt;
+ T:Int64;
+ Path,Wf:AnsiString;
+ W:LongInt;
+Begin
+ CmdBegin('run list','');
+ CmdAlias('ls');
+ Opt('all','a','','Include disabled workflows@@Inclut les workflows d'+#130+'sactiv'+#130+'s');
+ Opt('branch','b','string','Filter runs by branch@@Filtre les ex'+#130+'cutions par branche');
+ Opt('commit','c','SHA','Filter runs by the SHA of the commit@@Filtre les ex'+#130+'cutions par SHA de commit');
+ Opt('created','','date','Filter runs by the date it was created@@Filtre les ex'+#130+'cutions par date de cr'+#130+'ation');
+ Opt('event','e','string','Filter runs by which event triggered the run@@Filtre les ex'+#130+'cutions par '+#130+'v'+#130+'nement d'+#130+'clencheur');
+ OptLimitN('Maximum number of runs to fetch',20);
+ OptRepo;
+ Opt('status','s','string','Filter runs by status: {queued|completed|in_progress|requested|waiting|pending|action_required|cancelled|failure|neutral|skipped|stale|startup_failure|success|timed_out}@@Filtre les ex'+#130+'cutions par '+#130+'tat');
+ Opt('user','u','string','Filter runs by user who triggered the run@@Filtre les ex'+#130+'cutions par utilisateur');
+ Opt('workflow','w','string','Filter runs by workflow@@Filtre les ex'+#130+'cutions par workflow');
+ OptJsonAll;
+ CmdJson(RunFields);
+ ParseArgs(ArgStart);
+ NeedArgs(0,0);
+ JsonSetup(RunFields);
+ NeedRepo;
+ Lim:=OptInt('limit',20);
+ If OptHas('workflow')Then Begin
+  W:=FindWorkflow(OptGet('workflow'));
+  Path:=RepoApi('/actions/workflows/'+IStr(JI(W,'id'))+'/runs?');
+ End
+ Else Path:=RepoApi('/actions/runs?');
+ Path:=Path+'exclude_pull_requests=false';
+ If OptHas('branch')Then Path:=Path+'&branch='+UrlEnc(OptGet('branch'),False);
+ If OptHas('event')Then Path:=Path+'&event='+UrlEnc(OptGet('event'),False);
+ If OptHas('status')Then Path:=Path+'&status='+UrlEnc(OptGet('status'),False);
+ If OptHas('user')Then Path:=Path+'&actor='+UrlEnc(OptGet('user'),False);
+ If OptHas('commit')Then Path:=Path+'&head_sha='+UrlEnc(OptGet('commit'),False);
+ If OptHas('created')Then Path:=Path+'&created='+UrlEnc(OptGet('created'),False);
+ ApiPaged(Path,Lim,'workflow_runs',L,T);
+ If UseJson Then Begin EmitItems(L,RunSpec,@RunHook);Exit;End;
+ If L.N=0 Then Begin WriteLn(StdErr,'No runs found');Halt(0);End;
+ If OutTTY Then TblBegin('STATUS'#9'TITLE'#9'WORKFLOW'#9'BRANCH'#9'EVENT'#9'ID'#9'ELAPSED'#9'AGE') Else TblBegin('');
+ For I:=0 to L.N-1 do Begin
+  If OutTTY Then
+   TblRow(RunMark(L.A[I])+#9+JS(L.A[I],'display_title')+#9+JS(L.A[I],'name')+#9+JS(L.A[I],'head_branch')+#9+
+     JS(L.A[I],'event')+#9+IStr(JI(L.A[I],'id'))+#9+RunElapsed(L.A[I])+#9+TimeCell(JS(L.A[I],'created_at')))
+  Else
+   TblRow(JS(L.A[I],'status')+#9+JS(L.A[I],'conclusion')+#9+JS(L.A[I],'display_title')+#9+JS(L.A[I],'name')+#9+
+     JS(L.A[I],'head_branch')+#9+JS(L.A[I],'event')+#9+IStr(JI(L.A[I],'id'))+#9+RunElapsed(L.A[I])+#9+JS(L.A[I],'created_at'));
+ End;
+ TblPrint;
+End;
+
+Function LastDelimPos(Const S:AnsiString;C:Char):LongInt;
+Var
+ I:LongInt;
+Begin
+ LastDelimPos:=0;
+ For I:=1 to Length(S)do If S[I]=C Then LastDelimPos:=I;
+End;
+
+{ identifiant de la derniere execution quand aucun n'est fourni }
+Function RunIdArg(Const Cmd:AnsiString):LongInt;
+Var
+ L:TIList;
+ T:Int64;
+ Sel:AnsiString;
+ I:LongInt;
+Begin
+ Sel:=Pos1(0);
+ If Sel<>'' Then Begin
+  If Pos('://',Sel)>0 Then Begin
+   Sel:=Copy(Sel,LastDelimPos(Sel,'/')+1,Length(Sel));
+   If Pos('?',Sel)>0 Then Sel:=Copy(Sel,1,Pos('?',Sel)-1);
+  End;
+  RunIdArg:=ToInt(Sel,-1);
+  If RunIdArg<=0 Then Die('invalid run ID: '+Pos1(0));
+  Exit;
+ End;
+ If not InteractiveOk Then Die2('run or job ID required when not running interactively',1);
+ ApiPaged(RepoApi('/actions/runs'),10,'workflow_runs',L,T);
+ If L.N=0 Then Die('no recent runs found');
+ For I:=0 to L.N-1 do WriteLn(StdErr,I+1,'. ',RunMark(L.A[I]),' ',JS(L.A[I],'display_title'),' ',JS(L.A[I],'name'),' ',JS(L.A[I],'head_branch'),' (',JI(L.A[I],'id'),')');
+ Write(StdErr,'> ');
+ I:=ToInt(TrimStr(ReadLine_),1)-1;
+ If(I<0)or(I>=L.N)Then I:=0;
+ RunIdArg:=JI(L.A[I],'id');
+End;
+
+Procedure PrintJobLog(JobId:LongInt;Const JobName:AnsiString);
+Var
+ R:THttpReq;
+ L:TSList;
+ I:LongInt;
+Begin
+ ReqInit(R,'GET',ApiUrl(RepoApi('/actions/jobs/'+IStr(JobId)+'/logs')),TokenOf(ApiHost));
+ HttpDo(R);
+ If not ApiOk(R)Then Begin WriteLn(StdErr,'could not fetch logs for job ',JobName,': ',ErrText(R));Exit;End;
+ SplitStr(ReplaceAll(R.RespBody,#13,''),#10,L);
+ For I:=0 to L.N-1 do
+  If(L.A[I]<>'')or(I<L.N-1)Then WriteLn(JobName,#9'UNKNOWN STEP'#9,L.A[I]);
+End;
+
+Procedure CmdRunView;
+Var
+ Id,J,K:LongInt;
+ Run,Jobs:LongInt;
+ L:TIList;
+ T:Int64;
+ St:AnsiString;
+ JobId:LongInt;
+Begin
+ CmdBegin('run view','[<run-id>]');
+ Opt('attempt','a','uint','The attempt number of the workflow run@@Num'+#130+'ro de tentative de l''ex'+#130+'cution');
+ Opt('exit-status','','','Exit with non-zero status if run failed@@Quitte avec un code non nul si l''ex'+#130+'cution a '+#130+'chou'+#130+'');
+ Opt('job','j','string','View a specific job ID from a run@@Affiche un job pr'+#130+'cis de l''ex'+#130+'cution');
+ Opt('log','','','View full log for either a run or specific job@@Affiche le journal complet');
+ Opt('log-failed','','','View the log for any failed steps in a run or specific job@@Affiche le journal des '+#130+'tapes en '+#130+'chec');
+ OptRepo;
+ Opt('verbose','v','','Show job steps@@Affiche les '+#130+'tapes des jobs');
+ OptWeb('Open run in the browser@@Ouvre l''ex'+#130+'cution dans le navigateur');
+ OptJsonAll;
+ CmdJson(RunFields);
+ ParseArgs(ArgStart);
+ NeedArgs(0,1);
+ JsonSetup(RunFields);
+ NeedRepo;
+ If OptHas('job')and(Pos1(0)='')Then Begin
+  JobId:=ToInt(OptGet('job'),0);
+  K:=ApiJ('GET',RepoApi('/actions/jobs/'+IStr(JobId)),'');
+  Id:=JI(K,'run_id');
+ End
+ Else Id:=RunIdArg('view');
+ Run:=ApiJ('GET',RepoApi('/actions/runs/'+IStr(Id)+IfThen_(OptHas('attempt'),'/attempts/'+OptGet('attempt'),'')),'');
+ If OptHas('web')Then Begin OpenWeb(JS(Run,'html_url'));Exit;End;
+ If UseJson Then Begin EmitItem(Run,RunSpec,@RunHook);Exit;End;
+ ApiPaged(RepoApi('/actions/runs/'+IStr(Id)+'/jobs'),0,'jobs',L,T);
+ If OptHas('log')or OptHas('log-failed')Then Begin
+  For J:=0 to L.N-1 do Begin
+   If OptHas('job')and(JI(L.A[J],'id')<>ToInt(OptGet('job'),0))Then Continue;
+   If OptHas('log-failed')and(JS(L.A[J],'conclusion')<>'failure')Then Continue;
+   PrintJobLog(JI(L.A[J],'id'),JS(L.A[J],'name'));
+  End;
+  Exit;
+ End;
+ If OptHas('job')Then Begin
+  For J:=0 to L.N-1 do If JI(L.A[J],'id')=ToInt(OptGet('job'),0)Then Begin
+   WriteLn(RunMark(L.A[J]),' ',JS(L.A[J],'name'),' in ',RunElapsed(L.A[J]));
+   K:=JGet(L.A[J],'steps');
+   If K>=0 Then Begin
+    K:=JP[K].First;
+    While K>=0 do Begin WriteLn(IfThen_(JS(K,'conclusion')='success',#226#156#147,IfThen_(JS(K,'conclusion')='',' ','X')),' ',JS(K,'name'));K:=JP[K].Next;End;
+   End;
+  End;
+  Exit;
+ End;
+ WriteLn(RunMark(Run),' ',JS(Run,'head_branch'),' ',JS(Run,'name'),' '#194#183' ',Id);
+ WriteLn('Triggered via ',JS(Run,'event'),' ',TimeCell(JS(Run,'created_at')));
+ WriteLn;
+ WriteLn('JOBS');
+ For J:=0 to L.N-1 do Begin
+  WriteLn(RunMark(L.A[J]),' ',JS(L.A[J],'name'),' in ',RunElapsed(L.A[J]),' (ID ',JI(L.A[J],'id'),')');
+  If OptHas('verbose')Then Begin
+   K:=JGet(L.A[J],'steps');
+   If K>=0 Then Begin
+    K:=JP[K].First;
+    While K>=0 do Begin
+     WriteLn('  ',IfThen_(JS(K,'conclusion')='success',#226#156#147,IfThen_(JS(K,'conclusion')='skipped','-',IfThen_(JS(K,'conclusion')='','*','X'))),' ',JS(K,'name'));
+     K:=JP[K].Next;
+    End;
+   End;
+  End;
+ End;
+ If(JS(Run,'conclusion')='failure')Then Begin
+  WriteLn;
+  WriteLn('To see what failed, try: gh run view ',Id,' --log-failed');
+ End;
+ WriteLn;
+ WriteLn('For more information about a job, try: gh run view --job=<job-id>');
+ WriteLn('View this run on GitHub: ',JS(Run,'html_url'));
+ If OptHas('exit-status')and(JS(Run,'conclusion')<>'success')and(JS(Run,'status')='completed')Then Halt(1);
+End;
+
+Procedure CmdRunWatch;
+Var
+ Id,I,Interval:LongInt;
+ Run:LongInt;
+ L:TIList;
+ T:Int64;
+ Last:AnsiString;
+ Cur:AnsiString;
+Begin
+ CmdBegin('run watch','<run-id>');
+ Opt('compact','','','Show only relevant/failed steps@@Affiche seulement les '+#130+'tapes pertinentes ou en '+#130+'chec');
+ Opt('exit-status','','','Exit with non-zero status if run fails@@Quitte avec un code non nul si l''ex'+#130+'cution '+#130+'choue');
+ Opt('interval','i','int','Refresh interval in seconds (default 3)@@Intervalle de rafra'+#140+'chissement en secondes (d'+#130+'faut 3)');
+ OptRepo;
+ ParseArgs(ArgStart);
+ NeedArgs(0,1);
+ NeedRepo;
+ Id:=RunIdArg('watch');
+ Interval:=OptInt('interval',3);
+ Last:='';
+ Repeat
+  Run:=ApiJ('GET',RepoApi('/actions/runs/'+IStr(Id)),'');
+  ApiPaged(RepoApi('/actions/runs/'+IStr(Id)+'/jobs'),0,'jobs',L,T);
+  Cur:='';
+  For I:=0 to L.N-1 do Cur:=Cur+RunMark(L.A[I])+' '+JS(L.A[I],'name')+#10;
+  If Cur<>Last Then Begin
+   WriteLn(RunMark(Run),' ',JS(Run,'head_branch'),' ',JS(Run,'name'),' '#194#183' ',Id);
+   Write(Cur);
+   Last:=Cur;
+  End;
+  If JS(Run,'status')='completed' Then Break;
+  SleepSec(Interval);
+ Until False;
+ WriteLn(StdErr,RunMark(Run),' Run ',JS(Run,'name'),' (',Id,') completed with ''',JS(Run,'conclusion'),'''');
+ If OptHas('exit-status')and(JS(Run,'conclusion')<>'success')Then Halt(1);
+End;
+
+Procedure CmdRunCancel;
+Var
+ Id:LongInt;
+Begin
+ CmdBegin('run cancel','[<run-id>]');
+ OptRepo;
+ ParseArgs(ArgStart);
+ NeedArgs(0,1);
+ NeedRepo;
+ Id:=RunIdArg('cancel');
+ ApiJ('POST',RepoApi('/actions/runs/'+IStr(Id)+'/cancel'),'');
+ WriteLn(StdErr,#226#156#147' Request to cancel workflow ',Id,' submitted.');
+End;
+
+Procedure CmdRunRerun;
+Var
+ Id:LongInt;
+ Path:AnsiString;
+ F:TSList;
+Begin
+ CmdBegin('run rerun','[<run-id>]');
+ Opt('debug','d','','Rerun with debug logging@@Relance avec la journalisation de d'+#130+'bogage');
+ Opt('failed','','','Rerun only failed jobs, including dependencies@@Relance seulement les jobs en '+#130+'chec');
+ Opt('job','j','string','Rerun a specific job from a run (including dependencies)@@Relance un job pr'+#130+'cis de l''ex'+#130+'cution');
+ OptRepo;
+ ParseArgs(ArgStart);
+ NeedArgs(0,1);
+ NeedRepo;
+ Excl('failed','job');
+ SClear(F);
+ If OptHas('debug')Then FB(F,'enable_debug_logging',True);
+ If OptHas('job')Then Begin
+  ApiJ('POST',RepoApi('/actions/jobs/'+IStr(ToInt(OptGet('job'),0))+'/rerun'),ObjOf(F));
+  WriteLn(StdErr,#226#156#147' Requested rerun of job ',OptGet('job'));
+  Exit;
+ End;
+ Id:=RunIdArg('rerun');
+ If OptHas('failed')Then Path:='/rerun-failed-jobs' Else Path:='/rerun';
+ ApiJ('POST',RepoApi('/actions/runs/'+IStr(Id)+Path),ObjOf(F));
+ If OptHas('failed')Then WriteLn(StdErr,#226#156#147' Requested rerun (failed jobs) of run ',Id)
+ Else WriteLn(StdErr,#226#156#147' Requested rerun of run ',Id);
+End;
+
+Procedure CmdRunDelete;
+Var
+ Id:LongInt;
+Begin
+ CmdBegin('run delete','[<run-id>]');
+ OptRepo;
+ ParseArgs(ArgStart);
+ NeedArgs(0,1);
+ NeedRepo;
+ Id:=RunIdArg('delete');
+ ApiJ('DELETE',RepoApi('/actions/runs/'+IStr(Id)),'');
+ WriteLn(StdErr,#226#156#147' Request to delete workflow run submitted.');
+End;
+
+Procedure Unzip(Const Zip,Dir:AnsiString);
+Begin
+ MkDirs(Dir);
+ {$IFDEF WINDOWS}
+ If RunShell('tar -xf '+Q(Zip)+' -C '+Q(Dir))<>0 Then Die('could not extract '+Zip);
+ {$ELSE}
+ If WhichCmd('unzip')<>'' Then Begin
+  If RunShell('unzip -o -q '+Q(Zip)+' -d '+Q(Dir))<>0 Then Die('could not extract '+Zip);
+ End
+ Else If RunShell('tar -xf '+Q(Zip)+' -C '+Q(Dir))<>0 Then Die('could not extract '+Zip+' (unzip not found)');
+ {$ENDIF}
+End;
+
+Procedure CmdRunDownload;
+Var
+ Id,I,Cnt:LongInt;
+ L:TIList;
+ T:Int64;
+ Names,Pats:TSList;
+ Dir,Zip:AnsiString;
+ R:THttpReq;
+ Ok:Boolean;
+ J:LongInt;
+Begin
+ CmdBegin('run download','[<run-id>]');
+ Opt('dir','D','string','The directory to download artifacts into (default ".")@@Le r'+#130+'pertoire o'+#151+' t'+#130+'l'+#130+'charger les artefacts (d'+#130+'faut ".")');
+ Opt('name','n','*stringArray','Download artifacts that match any of the given names@@T'+#130+'l'+#130+'charge les artefacts portant l''un des noms');
+ Opt('pattern','p','*stringArray','Download artifacts that match a glob pattern@@T'+#130+'l'+#130+'charge les artefacts correspondant '+#133+' un motif');
+ OptRepo;
+ ParseArgs(ArgStart);
+ NeedArgs(0,1);
+ NeedRepo;
+ Id:=RunIdArg('download');
+ Dir:=OptGet('dir');If Dir='' Then Dir:='.';
+ OptList('name',Names);OptList('pattern',Pats);
+ ApiPaged(RepoApi('/actions/runs/'+IStr(Id)+'/artifacts'),0,'artifacts',L,T);
+ Cnt:=0;
+ For I:=0 to L.N-1 do Begin
+  Ok:=(Names.N=0)and(Pats.N=0);
+  For J:=0 to Names.N-1 do If JS(L.A[I],'name')=Names.A[J]Then Ok:=True;
+  For J:=0 to Pats.N-1 do If Glob(Pats.A[J],JS(L.A[I],'name'))Then Ok:=True;
+  If not Ok Then Continue;
+  If JB(L.A[I],'expired')Then Begin WriteLn(StdErr,'skipping expired artifact ',JS(L.A[I],'name'));Continue;End;
+  Zip:=TmpFile('.zip');
+  ReqInit(R,'GET',ApiUrl(RepoApi('/actions/artifacts/'+IStr(JI(L.A[I],'id'))+'/zip')),TokenOf(ApiHost));
+  R.OutFile:=Zip;
+  HttpDo(R);
+  If not ApiOk(R)Then Die(ErrText(R));
+  If(Names.N=0)and(Pats.N=0)and(L.N=1)Then Unzip(Zip,Dir) Else Unzip(Zip,JoinPath(Dir,JS(L.A[I],'name')));
+  DelFile(Zip);
+  Inc(Cnt);
+ End;
+ If Cnt=0 Then Die('no valid artifacts found to download');
+ WriteLn(StdErr,#226#156#147' Downloaded ',Cnt,' artifact(s) to ',Dir);
+End;
+
+{ ---------- cache ---------- }
+
+Procedure CmdCacheList;
+Var
+ L:TIList;
+ I,Lim:LongInt;
+ T:Int64;
+ Path:AnsiString;
+ Tot:Int64;
+Begin
+ CmdBegin('cache list','');
+ CmdAlias('ls');
+ Opt('key','k','string','Filter by cache key prefix@@Filtre par pr'+#130+'fixe de cl'+#130+' de cache');
+ OptLimitN('Maximum number of caches to fetch',30);
+ Opt('order','O','string','Order of caches returned: {asc|desc} (default "desc")@@Ordre des caches : {asc|desc} (d'+#130+'faut "desc")');
+ Opt('ref','r','string','Filter by ref, formatted as refs/heads/<branch name> or refs/pull/<number>/merge@@Filtre par r'+#130+'f'+#130+'rence');
+ Opt('sort','S','string','Sort fetched caches: {created_at|last_accessed_at|size_in_bytes} (default "last_accessed_at")@@Trie les caches');
+ OptRepo;OptJsonAll;
+ CmdJson(CacheFields);
+ ParseArgs(ArgStart);
+ NeedArgs(0,0);
+ JsonSetup(CacheFields);
+ NeedRepo;
+ Lim:=OptInt('limit',30);
+ Path:=RepoApi('/actions/caches?sort='+OptGetDef('sort','last_accessed_at')+'&direction='+OptGetDef('order','desc'));
+ If OptHas('key')Then Path:=Path+'&key='+UrlEnc(OptGet('key'),False);
+ If OptHas('ref')Then Path:=Path+'&ref='+UrlEnc(OptGet('ref'),False);
+ ApiPaged(Path,Lim,'actions_caches',L,T);
+ If UseJson Then Begin EmitItems(L,CacheSpec,Nil);Exit;End;
+ If L.N=0 Then Begin WriteLn(StdErr,'No caches found in ',RepoFull);Halt(1);End;
+ ShowingLine(L.N,T,'caches',RepoFull);
+ If OutTTY Then TblBegin('ID'#9'KEY'#9'SIZE'#9'CREATED'#9'ACCESSED') Else TblBegin('');
+ For I:=0 to L.N-1 do
+  TblRow(IStr(JI(L.A[I],'id'))+#9+JS(L.A[I],'key')+#9+FmtSize(JI(L.A[I],'size_in_bytes'))+#9+TimeCell(JS(L.A[I],'created_at'))+#9+
+    TimeCell(JS(L.A[I],'last_accessed_at')));
+ TblPrint;
+End;
+
+Procedure CmdCacheDelete;
+Var
+ L:TIList;
+ T:Int64;
+ I,Cnt:LongInt;
+ Sel:AnsiString;
+ R:THttpReq;
+Begin
+ CmdBegin('cache delete','[<cache-id>| <cache-key> | --all]');
+ Opt('all','a','','Delete all caches@@Supprime tous les caches');
+ OptRepo;
+ Opt('succeed-on-no-caches','','','Return exit code 0 if no caches found. Must be used in conjunction with `--all`@@Renvoie 0 si aucun cache n''est trouv'+#130+' (avec --all)');
+ ParseArgs(ArgStart);
+ NeedRepo;
+ If OptHas('all')Then Begin
+  ApiPaged(RepoApi('/actions/caches'),0,'actions_caches',L,T);
+  If L.N=0 Then Begin
+   If OptHas('succeed-on-no-caches')Then Begin WriteLn(StdErr,#226#156#147' No caches to delete');Exit;End;
+   Die('X No caches to delete');
+  End;
+  For I:=0 to L.N-1 do ApiJ('DELETE',RepoApi('/actions/caches/'+IStr(JI(L.A[I],'id'))),'');
+  WriteLn(StdErr,#226#156#147' Deleted ',L.N,IfThen_(L.N=1,' cache',' caches'),' from ',RepoFull);
+  Exit;
+ End;
+ NeedArgs(1,1);
+ Sel:=Pos1(0);
+ If ToInt(Sel,-1)>0 Then Begin
+  ApiJ('DELETE',RepoApi('/actions/caches/'+Sel),'');
+  Cnt:=1;
+ End
+ Else Begin
+  ApiCall(R,'DELETE',RepoApi('/actions/caches?key='+UrlEnc(Sel,False)),'');
+  If not ApiOk(R)Then Die(ErrText(R));
+  Cnt:=JI(JParse(R.RespBody),'total_count');
+  If Cnt=0 Then Die('X No cache with key '+Sel);
+ End;
+ WriteLn(StdErr,#226#156#147' Deleted ',Cnt,IfThen_(Cnt=1,' cache',' caches'),' from ',RepoFull);
+End;
+{ ------------------------------------------------------------------ }
+{ gh release, gh gist, gh ssh-key, gh gpg-key                          }
+{ ------------------------------------------------------------------ }
+
+Const
+ ReleaseFields='apiUrl,assets,author,body,createdAt,databaseId,id,isDraft,isImmutable,isPrerelease,name,publishedAt,'+
+  'tagName,tarballUrl,targetCommitish,uploadUrl,url,zipballUrl';
+ ReleaseSpec='apiUrl=url:s;body=body:s;createdAt=created_at:s;databaseId=id:n;id=node_id:s;isDraft=draft:b;'+
+  'isImmutable=immutable:b;isPrerelease=prerelease:b;name=name:s;publishedAt=published_at:N;tagName=tag_name:s;'+
+  'tarballUrl=tarball_url:s;targetCommitish=target_commitish:s;uploadUrl=upload_url:s;url=html_url:s;zipballUrl=zipball_url:s';
+
+Function ReleaseHook(Node:LongInt;Const F:AnsiString;Var Out_:AnsiString):Boolean;
+Var
+ A,C:LongInt;
+ L,O:TSList;
+Begin
+ ReleaseHook:=True;
+ If F='author' Then Out_:=UserJson(JGet(Node,'author'))
+ Else If F='assets' Then Begin
+  SClear(L);
+  A:=JGet(Node,'assets');
+  If A>=0 Then Begin
+   C:=JP[A].First;
+   While C>=0 do Begin
+    SClear(O);
+    FS(O,'apiUrl',JS(C,'url'));FS(O,'contentType',JS(C,'content_type'));FS(O,'createdAt',JS(C,'created_at'));
+    FN(O,'downloadCount',JI(C,'download_count'));FS(O,'id',JS(C,'node_id'));FS(O,'label',JS(C,'label'));
+    FS(O,'name',JS(C,'name'));FN(O,'size',JI(C,'size'));FS(O,'state',UpStr(JS(C,'state')));
+    FS(O,'updatedAt',JS(C,'updated_at'));FS(O,'url',JS(C,'browser_download_url'));
+    SAdd(L,ObjOf(O));
+    C:=JP[C].Next;
+   End;
+  End;
+  Out_:='['+JoinList(L,',')+']';
+ End
+ Else ReleaseHook:=False;
+End;
+
+Function ReleaseType(Node,Latest:LongInt):AnsiString;
+Begin
+ If JB(Node,'draft')Then ReleaseType:='Draft'
+ Else If JB(Node,'prerelease')Then ReleaseType:='Pre-release'
+ Else If(Latest>=0)and(JI(Node,'id')=JI(Latest,'id'))Then ReleaseType:='Latest'
+ Else ReleaseType:='';
+End;
+
+Function LatestRelease:LongInt;
+Var
+ R:THttpReq;
+Begin
+ ApiCall(R,'GET',RepoApi('/releases/latest'),'');
+ If ApiOk(R)Then LatestRelease:=JParse(R.RespBody) Else LatestRelease:=-1;
+End;
+
+{ release par etiquette (ou la derniere si vide) }
+Function FindRelease(Const Tag:AnsiString):LongInt;
+Var
+ R:THttpReq;
+ L:TIList;
+ I:LongInt;
+Begin
+ If Tag='' Then Begin
+  FindRelease:=ApiJ('GET',RepoApi('/releases/latest'),'');
+  Exit;
+ End;
+ ApiCall(R,'GET',RepoApi('/releases/tags/'+PathEnc(Tag)),'');
+ If ApiOk(R)Then Begin FindRelease:=JParse(R.RespBody);Exit;End;
+ { versions brouillon : pas visibles par etiquette }
+ ApiPagedQ(RepoApi('/releases'),0,'',L);
+ For I:=0 to L.N-1 do If JS(L.A[I],'tag_name')=Tag Then Begin FindRelease:=L.A[I];Exit;End;
+ Die('release not found');
+ FindRelease:=-1;
+End;
+
+Procedure CmdReleaseList;
+Var
+ L,Keep:TIList;
+ I,Lim,Lat:LongInt;
+ Tp:AnsiString;
+ Rev:Boolean;
+Begin
+ CmdBegin('release list','');
+ CmdAlias('ls');
+ Opt('exclude-drafts','','','Exclude draft releases@@Exclut les versions brouillon');
+ Opt('exclude-pre-releases','','','Exclude pre-releases@@Exclut les pr'+#130+'versions');
+ OptLimitN('Maximum number of items to fetch',30);
+ Opt('order','O','string','Order of releases returned: {asc|desc} (default "desc")@@Ordre des versions : {asc|desc} (d'+#130+'faut "desc")');
+ OptRepo;OptJsonAll;
+ CmdJson(ReleaseFields);
+ ParseArgs(ArgStart);
+ NeedArgs(0,0);
+ JsonSetup(ReleaseFields);
+ NeedRepo;
+ Lim:=OptInt('limit',30);
+ ApiPagedQ(RepoApi('/releases'),0,'',L);
+ Keep.N:=0;
+ Rev:=LoStr(OptGet('order'))='asc';
+ For I:=0 to L.N-1 do Begin
+  If OptHas('exclude-drafts')and JB(L.A[I],'draft')Then Continue;
+  If OptHas('exclude-pre-releases')and JB(L.A[I],'prerelease')Then Continue;
+  IAdd(Keep,L.A[I]);
+ End;
+ If Rev Then For I:=0 to Keep.N div 2-1 do Begin Lat:=Keep.A[I];Keep.A[I]:=Keep.A[Keep.N-1-I];Keep.A[Keep.N-1-I]:=Lat;End;
+ If Keep.N>Lim Then Keep.N:=Lim;
+ If UseJson Then Begin EmitItems(Keep,ReleaseSpec,@ReleaseHook);Exit;End;
+ If Keep.N=0 Then Begin WriteLn(StdErr,'No releases found in ',RepoFull);Halt(1);End;
+ Lat:=LatestRelease;
+ If OutTTY Then TblBegin('TITLE'#9'TYPE'#9'TAG NAME'#9'PUBLISHED') Else TblBegin('');
+ For I:=0 to Keep.N-1 do Begin
+  Tp:=ReleaseType(Keep.A[I],Lat);
+  TblRow(IfThen_(JS(Keep.A[I],'name')<>'',JS(Keep.A[I],'name'),JS(Keep.A[I],'tag_name'))+#9+Tp+#9+JS(Keep.A[I],'tag_name')+#9+
+    IfThen_(JB(Keep.A[I],'draft'),'',TimeCell(JS(Keep.A[I],'published_at'))));
+ End;
+ TblPrint;
+End;
+
+Procedure CmdReleaseView;
+Var
+ Rl,A,C:LongInt;
+Begin
+ CmdBegin('release view','[<tag>]');
+ OptRepo;OptJsonAll;
+ OptWeb('Open the release in the browser@@Ouvre la version dans le navigateur');
+ CmdJson(ReleaseFields);
+ ParseArgs(ArgStart);
+ NeedArgs(0,1);
+ JsonSetup(ReleaseFields);
+ NeedRepo;
+ Rl:=FindRelease(Pos1(0));
+ If OptHas('web')Then Begin OpenWeb(JS(Rl,'html_url'));Exit;End;
+ If UseJson Then Begin EmitItem(Rl,ReleaseSpec,@ReleaseHook);Exit;End;
+ A:=JGet(Rl,'assets');
+ If OutTTY Then Begin
+  WriteLn(IfThen_(JS(Rl,'name')<>'',JS(Rl,'name'),JS(Rl,'tag_name')));
+  WriteLn(JS(Rl,'author.login'),' released this ',TimeCell(JS(Rl,'published_at')));
+  WriteLn;
+  If JS(Rl,'body')<>'' Then WriteLn('  ',ReplaceAll(JS(Rl,'body'),#10,#10'  '));
+  If(A>=0)and(JP[A].Cnt>0)Then Begin
+   WriteLn;
+   WriteLn('Assets');
+   C:=JP[A].First;
+   While C>=0 do Begin WriteLn(PadR(JS(C,'name'),40),FmtSize(JI(C,'size')));C:=JP[C].Next;End;
+  End;
+  WriteLn;
+  WriteLn('View on GitHub: ',JS(Rl,'html_url'));
+ End
+ Else Begin
+  WriteLn('title:'#9,JS(Rl,'name'));
+  WriteLn('tag:'#9,JS(Rl,'tag_name'));
+  WriteLn('draft:'#9,JBool(JB(Rl,'draft')));
+  WriteLn('prerelease:'#9,JBool(JB(Rl,'prerelease')));
+  WriteLn('author:'#9,JS(Rl,'author.login'));
+  WriteLn('created:'#9,JS(Rl,'created_at'));
+  WriteLn('published:'#9,JS(Rl,'published_at'));
+  WriteLn('url:'#9,JS(Rl,'html_url'));
+  If A>=0 Then Begin
+   C:=JP[A].First;
+   While C>=0 do Begin WriteLn('asset:'#9,JS(C,'name'));C:=JP[C].Next;End;
+  End;
+  WriteLn('--');
+  WriteLn(JS(Rl,'body'));
+ End;
+End;
+
+Function ContentTypeOf(Const N:AnsiString):AnsiString;
+Var
+ E:AnsiString;
+Begin
+ E:=LoStr(N);
+ If EndsWith(E,'.zip')Then ContentTypeOf:='application/zip'
+ Else If EndsWith(E,'.tar.gz')or EndsWith(E,'.tgz')Then ContentTypeOf:='application/gzip'
+ Else If EndsWith(E,'.gz')Then ContentTypeOf:='application/gzip'
+ Else If EndsWith(E,'.json')Then ContentTypeOf:='application/json'
+ Else If EndsWith(E,'.txt')or EndsWith(E,'.md')Then ContentTypeOf:='text/plain'
+ Else If EndsWith(E,'.html')Then ContentTypeOf:='text/html'
+ Else If EndsWith(E,'.pdf')Then ContentTypeOf:='application/pdf'
+ Else If EndsWith(E,'.png')Then ContentTypeOf:='image/png'
+ Else If EndsWith(E,'.jpg')or EndsWith(E,'.jpeg')Then ContentTypeOf:='image/jpeg'
+ Else If EndsWith(E,'.xml')Then ContentTypeOf:='application/xml'
+ Else ContentTypeOf:='application/octet-stream';
+End;
+
+{ envoie un fichier comme fichier de version ; Spec = chemin ou chemin#libelle }
+Procedure UploadAsset(Rl:LongInt;Const Spec:AnsiString;Clobber:Boolean);
+Var
+ Path,Lbl,Nm,Url:AnsiString;
+ P,I,C,A:LongInt;
+ R:THttpReq;
+Begin
+ P:=Pos('#',Spec);
+ If P>0 Then Begin Path:=Copy(Spec,1,P-1);Lbl:=Copy(Spec,P+1,Length(Spec));End
+ Else Begin Path:=Spec;Lbl:='';End;
+ If not FileExists_(Path)Then Die('open '+Path+': no such file or directory');
+ Nm:=BaseName(Path);
+ A:=JGet(Rl,'assets');
+ If A>=0 Then Begin
+  C:=JP[A].First;
+  While C>=0 do Begin
+   If JS(C,'name')=Nm Then Begin
+    If not Clobber Then Die('asset under the same name already exists: '+Nm);
+    ApiJ('DELETE',RepoApi('/releases/assets/'+IStr(JI(C,'id'))),'');
+   End;
+   C:=JP[C].Next;
+  End;
+ End;
+ Url:=UploadBaseOf(ApiHost)+RepoApi('/releases/'+IStr(JI(Rl,'id'))+'/assets')+'?name='+UrlEnc(Nm,False);
+ If Lbl<>'' Then Url:=Url+'&label='+UrlEnc(Lbl,False);
+ ReqInit(R,'POST',Url,TokenOf(ApiHost));
+ R.BodyFile:=Path;R.BodyOfs:=0;R.BodyLen:=FileSizeOf(Path);
+ R.Headers:='Content-Type: '+ContentTypeOf(Nm)+#13#10;
+ R.ProgLabel:=Nm;R.ShowProg:=ErrTTY;
+ HttpDo(R);
+ If not ApiOk(R)Then Die(ErrText(R));
+End;
+
+Function BodyOptNotes(Var Given:Boolean):AnsiString;
+Var
+ F,S:AnsiString;
+Begin
+ Given:=False;BodyOptNotes:='';
+ If OptHas('notes')Then Begin Given:=True;BodyOptNotes:=OptGet('notes');End;
+ If OptHas('notes-file')Then Begin
+  Given:=True;
+  F:=OptGet('notes-file');
+  If F='-' Then BodyOptNotes:=ReplaceAll(ReadStdin,#13,'')
+  Else If ReadAll(F,S)Then BodyOptNotes:=ReplaceAll(S,#13,'')
+  Else Die('open '+F+': no such file or directory');
+ End;
+End;
+
+Procedure CmdReleaseCreate;
+Var
+ Tag,Title,Notes,Target:AnsiString;
+ HasNotes:Boolean;
+ F:TSList;
+ J,I:LongInt;
+ R:THttpReq;
+ Latest_:AnsiString;
+Begin
+ CmdBegin('release create','[<tag>] [<release-notes>]');
+ Opt('discussion-category','','string','Start a discussion in the specified category@@D'+#130+'marre une discussion dans la cat'+#130+'gorie indiqu'+#130+'e');
+ Opt('draft','d','','Save the release as a draft instead of publishing it@@Enregistre la version comme brouillon');
+ Opt('generate-notes','','','Automatically generate title and notes for the release@@G'+#130+'n'+#138+'re automatiquement le titre et les notes');
+ Opt('latest','','','Mark this release as "Latest" (default [automatic based on date and version])@@Marque cette version comme "Latest"');
+ Opt('notes','n','string','Release notes@@Notes de version');
+ Opt('notes-file','F','file','Read release notes from file (use "-" to read from standard input)@@Lit les notes depuis un fichier');
+ Opt('notes-from-tag','','','Automatically generate notes from annotated tag@@G'+#130+'n'+#138+'re les notes depuis l'''+#130+'tiquette annot'+#130+'e');
+ Opt('notes-start-tag','','string','Tag to use as the starting point for generating release notes@@'+#144+'tiquette de d'+#130+'part pour g'+#130+'n'+#130+'rer les notes');
+ Opt('prerelease','p','','Mark the release as a prerelease@@Marque la version comme pr'+#130+'version');
+ OptRepo;
+ Opt('target','','branch','Target branch or full commit SHA (default [main branch])@@Branche cible ou SHA complet (d'+#130+'faut : branche principale)');
+ Opt('title','t','string','Release title@@Titre de la version');
+ Opt('verify-tag','','','Abort in case the git tag doesn''t already exist in the remote repository@@Abandonne si l'''+#130+'tiquette n''existe pas dans le d'+#130+'p'+#147+'t distant');
+ ParseArgs(ArgStart);
+ NeedArgs(0,-1);
+ NeedRepo;
+ Tag:=Pos1(0);
+ If Tag='' Then Begin
+  If InteractiveOk Then Tag:=AskLine('Choose a tag','') Else Die2('tag required when not running interactively',1);
+ End;
+ Title:=OptGet('title');
+ Notes:=BodyOptNotes(HasNotes);
+ If OptHas('notes-from-tag')Then Begin
+  Notes:=GitOut('tag -l --format=%(contents) '+Q(Tag));
+  HasNotes:=True;
+ End;
+ If(not HasNotes)and not OptHas('generate-notes')and InteractiveOk and(not OptHas('title'))Then Begin
+  Title:=AskLine('Title (optional)','');
+  Notes:=AskBody('Release notes');HasNotes:=True;
+ End;
+ SClear(F);
+ FS(F,'tag_name',Tag);
+ If Title<>'' Then FS(F,'name',Title);
+ If HasNotes Then FS(F,'body',Notes);
+ If OptHas('target')Then FS(F,'target_commitish',OptGet('target'));
+ FB(F,'draft',OptHas('draft'));FB(F,'prerelease',OptHas('prerelease'));
+ If OptHas('latest')Then FS(F,'make_latest','true');
+ If OptHas('generate-notes')Then FB(F,'generate_release_notes',True);
+ If OptHas('discussion-category')Then FS(F,'discussion_category_name',OptGet('discussion-category'));
+ If OptHas('verify-tag')Then Begin
+  ApiCall(R,'GET',RepoApi('/git/ref/tags/'+PathEnc(Tag)),'');
+  If not ApiOk(R)Then Die('tag '+Tag+' doesn''t exist in the repo '+RepoFull+', aborting due to --verify-tag flag');
+ End;
+ J:=ApiJ('POST',RepoApi('/releases'),ObjOf(F));
+ For I:=1 to PosArgs.N-1 do UploadAsset(J,PosArgs.A[I],False);
+ WriteLn(JS(J,'html_url'));
+End;
+
+Procedure CmdReleaseUpload;
+Var
+ Rl,I:LongInt;
+Begin
+ CmdBegin('release upload','<tag> <files>...');
+ Opt('clobber','','','Overwrite existing assets of the same name@@Remplace les fichiers existants de m'+#136+'me nom');
+ OptRepo;
+ ParseArgs(ArgStart);
+ NeedArgs(2,-1);
+ NeedRepo;
+ Rl:=FindRelease(Pos1(0));
+ For I:=1 to PosArgs.N-1 do UploadAsset(Rl,PosArgs.A[I],OptHas('clobber'));
+ WriteLn(StdErr,#226#156#147' Uploaded ',PosArgs.N-1,' asset(s) to ',Pos1(0));
+End;
+
+Procedure CmdReleaseDownload;
+Var
+ Rl,A,C,Cnt:LongInt;
+ Pats:TSList;
+ Dir,Out_,Nm:AnsiString;
+ R:THttpReq;
+ Ok:Boolean;
+ I:LongInt;
+Begin
+ CmdBegin('release download','[<tag>]');
+ Opt('archive','A','format','Download the source code archive in the specified format (zip or tar.gz)@@T'+#130+'l'+#130+'charge l''archive du code source (zip ou tar.gz)');
+ Opt('clobber','','','Overwrite existing files of the same name@@Remplace les fichiers existants');
+ Opt('dir','D','directory','The directory to download files into (default ".")@@Le r'+#130+'pertoire de t'+#130+'l'+#130+'chargement (d'+#130+'faut ".")');
+ Opt('output','O','file','The file to write a single asset to (use "-" to write to standard output)@@Le fichier de sortie pour un seul fichier ("-" = sortie standard)');
+ Opt('pattern','p','*stringArray','Download only assets that match a glob pattern@@T'+#130+'l'+#130+'charge seulement les fichiers correspondant '+#133+' un motif');
+ OptRepo;
+ Opt('skip-existing','','','Skip downloading when files of the same name exist@@Ignore les fichiers existants');
+ ParseArgs(ArgStart);
+ NeedArgs(0,1);
+ NeedRepo;
+ Rl:=FindRelease(Pos1(0));
+ Dir:=OptGet('dir');If Dir='' Then Dir:='.';
+ OptList('pattern',Pats);
+ If OptHas('archive')Then Begin
+  Nm:=JS(Rl,'tag_name');
+  If OptGet('archive')='zip' Then Begin
+   ReqInit(R,'GET',ApiUrl(RepoApi('/zipball/'+PathEnc(Nm))),TokenOf(ApiHost));Out_:=RepoName+'-'+Nm+'.zip';
+  End
+  Else If OptGet('archive')='tar.gz' Then Begin
+   ReqInit(R,'GET',ApiUrl(RepoApi('/tarball/'+PathEnc(Nm))),TokenOf(ApiHost));Out_:=RepoName+'-'+Nm+'.tar.gz';
+  End
+  Else Begin Die2('unknown archive format "'+OptGet('archive')+'"; use zip or tar.gz',1);Exit;End;
+  R.OutFile:=JoinPath(Dir,Out_);R.ShowProg:=ErrTTY;R.ProgLabel:=Out_;
+  HttpDo(R);
+  If not ApiOk(R)Then Die(ErrText(R));
+  Exit;
+ End;
+ A:=JGet(Rl,'assets');
+ Cnt:=0;
+ If A>=0 Then Begin
+  C:=JP[A].First;
+  While C>=0 do Begin
+   Ok:=Pats.N=0;
+   For I:=0 to Pats.N-1 do If Glob(Pats.A[I],JS(C,'name'))Then Ok:=True;
+   If Ok Then Begin
+    Nm:=JS(C,'name');
+    If OptHas('output')Then Out_:=OptGet('output') Else Out_:=JoinPath(Dir,Nm);
+    If FileExists_(Out_)and(Out_<>'-')Then Begin
+     If OptHas('skip-existing')Then Begin C:=JP[C].Next;Continue;End;
+     If not OptHas('clobber')Then Die('X Asset '+Nm+' already exists; use --clobber to overwrite or --skip-existing to skip');
+    End;
+    ReqInit(R,'GET',ApiUrl(RepoApi('/releases/assets/'+IStr(JI(C,'id')))),TokenOf(ApiHost));
+    R.Headers:='Accept: application/octet-stream'#13#10;
+    If Out_<>'-' Then R.OutFile:=Out_;
+    R.ShowProg:=ErrTTY and(Out_<>'-');R.ProgLabel:=Nm;
+    HttpDo(R);
+    If not ApiOk(R)Then Die(ErrText(R));
+    If Out_='-' Then Write(R.RespBody);
+    Inc(Cnt);
+   End;
+   C:=JP[C].Next;
+  End;
+ End;
+ If Cnt=0 Then Die('no assets match the file pattern');
+End;
+
+Procedure CmdReleaseDelete;
+Var
+ Rl:LongInt;
+Begin
+ CmdBegin('release delete','<tag>');
+ Opt('cleanup-tag','','','Delete the specified tag in addition to its release@@Supprime aussi l'''+#130+'tiquette');
+ OptRepo;
+ Opt('yes','y','','Skip the confirmation prompt@@N''affiche pas la confirmation');
+ ParseArgs(ArgStart);
+ NeedArgs(1,1);
+ NeedRepo;
+ Rl:=FindRelease(Pos1(0));
+ If not OptHas('yes')Then Begin
+  If not InteractiveOk Then Die2('--yes required when not running interactively',1);
+  If not Confirm('Delete release '+Pos1(0)+' in '+RepoFull+'?',False)Then Begin WriteLn(StdErr,'Cancelled.');Halt(2);End;
+ End;
+ ApiJ('DELETE',RepoApi('/releases/'+IStr(JI(Rl,'id'))),'');
+ WriteLn(StdErr,#226#156#147' Deleted release ',Pos1(0));
+ If OptHas('cleanup-tag')Then Begin
+  ApiJ('DELETE',RepoApi('/git/refs/tags/'+PathEnc(Pos1(0))),'');
+  WriteLn(StdErr,#226#156#147' Deleted tag ',Pos1(0));
+ End;
+End;
+
+Procedure CmdReleaseDeleteAsset;
+Var
+ Rl,A,C:LongInt;
+Begin
+ CmdBegin('release delete-asset','<tag> <asset-name>');
+ OptRepo;
+ Opt('yes','y','','Skip the confirmation prompt@@N''affiche pas la confirmation');
+ ParseArgs(ArgStart);
+ NeedArgs(2,2);
+ NeedRepo;
+ Rl:=FindRelease(Pos1(0));
+ A:=JGet(Rl,'assets');
+ If A>=0 Then Begin
+  C:=JP[A].First;
+  While C>=0 do Begin
+   If JS(C,'name')=Pos1(1)Then Begin
+    If not OptHas('yes')and InteractiveOk Then
+      If not Confirm('Delete asset '+Pos1(1)+' in release '+Pos1(0)+' in '+RepoFull+'?',False)Then Halt(2);
+    ApiJ('DELETE',RepoApi('/releases/assets/'+IStr(JI(C,'id'))),'');
+    WriteLn(StdErr,#226#156#147' Deleted asset ',Pos1(1),' from release ',Pos1(0));
+    Exit;
+   End;
+   C:=JP[C].Next;
+  End;
+ End;
+ Die('asset '+Pos1(1)+' not found in release '+Pos1(0));
+End;
+
+Procedure CmdReleaseEdit;
+Var
+ Rl:LongInt;
+ F:TSList;
+ Notes:AnsiString;
+ HasNotes:Boolean;
+Begin
+ CmdBegin('release edit','<tag>');
+ Opt('discussion-category','','string','Start a discussion in the specified category when publishing a draft@@D'+#130+'marre une discussion dans la cat'+#130+'gorie indiqu'+#130+'e');
+ Opt('draft','','','Save the release as a draft instead of publishing it@@Enregistre la version comme brouillon');
+ Opt('latest','','','Explicitly mark the release as "Latest"@@Marque explicitement la version comme "Latest"');
+ Opt('notes','n','string','Release notes@@Notes de version');
+ Opt('notes-file','F','file','Read release notes from file (use "-" to read from standard input)@@Lit les notes depuis un fichier');
+ Opt('prerelease','','','Mark the release as a prerelease@@Marque la version comme pr'+#130+'version');
+ OptRepo;
+ Opt('tag','','string','The name of the tag@@Le nom de l'''+#130+'tiquette');
+ Opt('target','','branch','Target branch or full commit SHA@@Branche cible ou SHA complet');
+ Opt('title','t','string','Release title@@Titre de la version');
+ Opt('verify-tag','','','Abort in case the git tag doesn''t already exist in the remote repository@@Abandonne si l'''+#130+'tiquette n''existe pas');
+ ParseArgs(ArgStart);
+ NeedArgs(1,1);
+ NeedRepo;
+ Rl:=FindRelease(Pos1(0));
+ Notes:=BodyOptNotes(HasNotes);
+ SClear(F);
+ If OptHas('title')Then FS(F,'name',OptGet('title'));
+ If HasNotes Then FS(F,'body',Notes);
+ If OptHas('tag')Then FS(F,'tag_name',OptGet('tag'));
+ If OptHas('target')Then FS(F,'target_commitish',OptGet('target'));
+ If OptHas('draft')Then FB(F,'draft',LoStr(OptGet('draft'))<>'false');
+ If OptHas('prerelease')Then FB(F,'prerelease',LoStr(OptGet('prerelease'))<>'false');
+ If OptHas('latest')Then FS(F,'make_latest','true');
+ If OptHas('discussion-category')Then FS(F,'discussion_category_name',OptGet('discussion-category'));
+ If F.N=0 Then Die2('nothing to edit',1);
+ Rl:=ApiJ('PATCH',RepoApi('/releases/'+IStr(JI(Rl,'id'))),ObjOf(F));
+ WriteLn(JS(Rl,'html_url'));
+End;
+
+{ ---------- gist ---------- }
+
+Function GistId(Const S:AnsiString):AnsiString;
+Var
+ T:AnsiString;
+Begin
+ T:=S;
+ If Pos('://',T)>0 Then T:=Copy(T,LastDelimPos(T,'/')+1,Length(T));
+ If EndsWith(T,'.git')Then Delete(T,Length(T)-3,4);
+ GistId:=T;
+End;
+
+Procedure CmdGistCreate;
+Var
+ F,Files:TSList;
+ O:TSList;
+ Txt,Nm,Desc:AnsiString;
+ I:LongInt;
+ J:LongInt;
+ FJ:LongInt;
+Begin
+ CmdBegin('gist create','[<filename>... | -]');
+ CmdAlias('new');
+ Opt('desc','d','string','A description for this gist@@Une description pour ce gist');
+ Opt('filename','f','string','Provide a filename to be used when reading from standard input@@Nom de fichier utilis'+#130+' pour la lecture de l''entr'+#130+'e standard');
+ Opt('public','p','','List the gist publicly (default: secret)@@Rend le gist public (d'+#130+'faut : secret)');
+ OptWeb('Open the web browser with created gist@@Ouvre le gist cr'+#130+''+#130+' dans le navigateur');
+ ParseArgs(ArgStart);
+ InitHostOpt;
+ SClear(Files);
+ If(PosArgs.N=0)or((PosArgs.N=1)and(PosArgs.A[0]='-'))Then Begin
+  Txt:=ReadStdin;
+  Nm:=OptGet('filename');If Nm='' Then Nm:='gistfile0.txt';
+  SAdd(Files,JQ(Nm)+':{"content":'+JQ(Txt)+'}');
+ End
+ Else For I:=0 to PosArgs.N-1 do Begin
+  If PosArgs.A[I]='-' Then Begin
+   Txt:=ReadStdin;Nm:=OptGet('filename');If Nm='' Then Nm:='gistfile'+IStr(I)+'.txt';
+  End
+  Else Begin
+   If not ReadAll(PosArgs.A[I],Txt)Then Die('open '+PosArgs.A[I]+': no such file or directory');
+   Nm:=BaseName(PosArgs.A[I]);
+  End;
+  If Txt='' Then Die('X Failed to create gist: a gist file cannot be blank');
+  SAdd(Files,JQ(Nm)+':{"content":'+JQ(Txt)+'}');
+ End;
+ SClear(O);
+ FS(O,'description',OptGet('desc'));
+ FB(O,'public',OptHas('public'));
+ FR(O,'files','{'+JoinList(Files,',')+'}');
+ J:=ApiJ('POST','/gists',ObjOf(O));
+ If ErrTTY Then WriteLn(StdErr,#226#156#147' Created ',IfThen_(OptHas('public'),'public','secret'),' gist ',BaseName(JS(J,'html_url')));
+ WriteLn(JS(J,'html_url'));
+ If OptHas('web')Then OpenWeb(JS(J,'html_url'));
+End;
+
+Procedure CmdGistList;
+Var
+ L:TIList;
+ I,Lim,K,Cnt:LongInt;
+ Pub,Sec:Boolean;
+ Keep:TIList;
+ Desc:AnsiString;
+Begin
+ CmdBegin('gist list','');
+ CmdAlias('ls');
+ Opt('filter','','expression','Filter gists using a regular expression@@Filtre les gists avec une expression r'+#130+'guli'+#138+'re');
+ OptLimitN('Maximum number of gists to fetch',10);
+ Opt('public','','','Show only public gists@@Affiche seulement les gists publics');
+ Opt('secret','','','Show only secret gists@@Affiche seulement les gists secrets');
+ ParseArgs(ArgStart);
+ NeedArgs(0,0);
+ InitHostOpt;
+ Lim:=OptInt('limit',10);
+ ApiPagedQ('/gists',0,'',L);
+ Keep.N:=0;
+ For I:=0 to L.N-1 do Begin
+  If OptHas('public')and not JB(L.A[I],'public')Then Continue;
+  If OptHas('secret')and JB(L.A[I],'public')Then Continue;
+  If OptHas('filter')Then Begin
+   If not RxCompile(OptGet('filter'),False,False)Then Die('invalid regular expression');
+   If not RxSearch(JS(L.A[I],'description'),1)Then Continue;
+  End;
+  If Keep.N<Lim Then IAdd(Keep,L.A[I]);
+ End;
+ If Keep.N=0 Then Begin WriteLn(StdErr,'No gists found');Halt(0);End;
+ TblBegin('');
+ For I:=0 to Keep.N-1 do Begin
+  Desc:=FirstLine(JS(Keep.A[I],'description'));
+  If Desc='' Then Begin
+   Desc:='';
+   K:=JGet(Keep.A[I],'files');
+   If K>=0 Then Desc:=JP[JP[K].First].Key;
+  End;
+  Cnt:=JP[JGet(Keep.A[I],'files')].Cnt;
+  TblRow(JS(Keep.A[I],'id')+#9+Desc+#9+Pluralize(Cnt,'file')+#9+IfThen_(JB(Keep.A[I],'public'),'public','secret')+#9+
+    TimeCell(JS(Keep.A[I],'updated_at')));
+ End;
+ TblPrint;
+End;
+
+Procedure CmdGistView;
+Var
+ Id:AnsiString;
+ J,Fl,C:LongInt;
+ R:THttpReq;
+ First:Boolean;
+Begin
+ CmdBegin('gist view','[<id> | <url>]');
+ Opt('filename','f','string','Display a single file from the gist@@Affiche un seul fichier du gist');
+ Opt('files','','','List file names from the gist@@Liste les noms de fichiers du gist');
+ Opt('raw','r','','Print raw instead of rendered gist contents@@Affiche le contenu brut du gist');
+ OptWeb('Open gist in the browser@@Ouvre le gist dans le navigateur');
+ ParseArgs(ArgStart);
+ NeedArgs(0,1);
+ InitHostOpt;
+ Id:=GistId(Pos1(0));
+ If Id='' Then Die2('gist ID or URL required when not running interactively',1);
+ If OptHas('web')Then Begin OpenWeb(WebBaseOf(ApiHost)+'/'+Id);Exit;End;
+ J:=ApiJ('GET','/gists/'+PathEnc(Id),'');
+ Fl:=JGet(J,'files');
+ If OptHas('files')Then Begin
+  C:=JP[Fl].First;
+  While C>=0 do Begin WriteLn(JP[C].Key);C:=JP[C].Next;End;
+  Exit;
+ End;
+ If(JS(J,'description')<>'')and not OptHas('raw')and not OptHas('filename')and OutTTY Then Begin
+  WriteLn(JS(J,'description'));
+  WriteLn;
+ End;
+ First:=True;
+ C:=JP[Fl].First;
+ While C>=0 do Begin
+  If(not OptHas('filename'))or(JP[C].Key=OptGet('filename'))Then Begin
+   If(JP[Fl].Cnt>1)and not OptHas('filename')and not OptHas('raw')Then Begin
+    If not First Then WriteLn;
+    WriteLn(JP[C].Key);WriteLn;
+   End;
+   First:=False;
+   Write(JS(C,'content'));
+   If(JS(C,'content')<>'')and(JS(C,'content')[Length(JS(C,'content'))]<>#10)Then WriteLn;
+  End;
+  C:=JP[C].Next;
+ End;
+End;
+
+Procedure CmdGistEdit;
+Var
+ Id:AnsiString;
+ J,Fl,C:LongInt;
+ Files:TSList;
+ Txt,Nm,Cur:AnsiString;
+ Rm:TSList;
+ I:LongInt;
+ O:TSList;
+Begin
+ CmdBegin('gist edit','{<id> | <url>} [<filename>]');
+ Opt('add','a','string','Add a new file to the gist@@Ajoute un nouveau fichier au gist');
+ Opt('desc','d','string','New description for the gist@@Nouvelle description du gist');
+ Opt('filename','f','string','Select a file to edit@@S'+#130+'lectionne un fichier '+#133+' modifier');
+ Opt('remove','r','string','Remove a file from the gist@@Retire un fichier du gist');
+ ParseArgs(ArgStart);
+ NeedArgs(1,2);
+ InitHostOpt;
+ Id:=GistId(Pos1(0));
+ J:=ApiJ('GET','/gists/'+PathEnc(Id),'');
+ Fl:=JGet(J,'files');
+ SClear(Files);SClear(O);
+ If OptHas('desc')Then FS(O,'description',OptGet('desc'));
+ If OptHas('add')Then Begin
+  If not ReadAll(OptGet('add'),Txt)Then Die('open '+OptGet('add')+': no such file or directory');
+  SAdd(Files,JQ(BaseName(OptGet('add')))+':{"content":'+JQ(Txt)+'}');
+ End
+ Else If OptHas('remove')Then SAdd(Files,JQ(OptGet('remove'))+':null')
+ Else If not OptHas('desc')Then Begin
+  Nm:=OptGet('filename');If Nm='' Then Nm:=Pos1(1);
+  If Nm='' Then Nm:=JP[JP[Fl].First].Key;
+  C:=JGet(Fl,Nm);
+  If C<0 Then Die('gist has no file "'+Nm+'"');
+  Cur:=JS(C,'content');
+  If(PosArgs.N<2)and not InteractiveOk and not OptHas('filename')Then Die2('gist edit requires a terminal to edit content',1);
+  Txt:=EditText(Cur,'.txt');
+  If Txt=Cur Then Begin WriteLn(StdErr,'Nothing to update');Exit;End;
+  SAdd(Files,JQ(Nm)+':{"content":'+JQ(Txt)+'}');
+ End;
+ If Files.N>0 Then FR(O,'files','{'+JoinList(Files,',')+'}');
+ ApiJ('PATCH','/gists/'+PathEnc(Id),ObjOf(O));
+ WriteLn(StdErr,#226#156#147' Updated gist');
+End;
+
+Procedure CmdGistDelete;
+Var
+ Id:AnsiString;
+Begin
+ CmdBegin('gist delete','{<id> | <url>}');
+ Opt('yes','','','Confirm deletion without prompting@@Confirme la suppression sans demander');
+ ParseArgs(ArgStart);
+ NeedArgs(1,1);
+ InitHostOpt;
+ Id:=GistId(Pos1(0));
+ If not OptHas('yes')Then Begin
+  If not InteractiveOk Then Die2('--yes required when not running interactively',1);
+  If not Confirm('Delete gist '+Id+'?',False)Then Begin WriteLn(StdErr,'Cancelled.');Halt(2);End;
+ End;
+ ApiJ('DELETE','/gists/'+PathEnc(Id),'');
+ WriteLn(StdErr,#226#156#147' Deleted gist ',Id);
+End;
+
+Procedure CmdGistRename;
+Var
+ Id:AnsiString;
+Begin
+ CmdBegin('gist rename','{<id> | <url>} <old-filename> <new-filename>');
+ ParseArgs(ArgStart);
+ NeedArgs(3,3);
+ InitHostOpt;
+ Id:=GistId(Pos1(0));
+ ApiJ('PATCH','/gists/'+PathEnc(Id),'{"files":{'+JQ(Pos1(1))+':{"filename":'+JQ(Pos1(2))+'}}}');
+ WriteLn(StdErr,#226#156#147' Renamed ',Pos1(1),' to ',Pos1(2),' in gist ',Id);
+End;
+
+Procedure CmdGistClone;
+Var
+ Id:AnsiString;
+ Url:AnsiString;
+Begin
+ CmdBegin('gist clone','<gist> [<directory>] [-- <gitflags>...]');
+ ParseArgs(ArgStart);
+ NeedArgs(1,-1);
+ InitHostOpt;
+ Id:=GistId(Pos1(0));
+ If GitProto(ApiHost)Then Url:='git@gist.'+GitHostName(ApiHost)+':'+Id+'.git'
+ Else Url:='https://gist.'+GitHostName(ApiHost)+'/'+Id+'.git';
+ If StartsWith(Pos1(0),'http')Then Url:=Pos1(0);
+ Halt(GitFg('clone '+Q(Url)+IfThen_(PosArgs.N>1,' '+Q(PosArgs.A[1]),'')));
+End;
+
+{ ---------- ssh-key, gpg-key ---------- }
+
+Procedure CmdSshKeyList;
+Var
+ L,S:TIList;
+ I:LongInt;
+Begin
+ CmdBegin('ssh-key list','');
+ CmdAlias('ls');
+ ParseArgs(ArgStart);
+ NeedArgs(0,0);
+ InitHostOpt;
+ ApiPagedQ('/user/keys',0,'',L);
+ ApiPagedQ('/user/ssh_signing_keys',0,'',S);
+ If L.N+S.N=0 Then Begin WriteLn(StdErr,'No SSH keys present in GitHub account.');Halt(1);End;
+ If OutTTY Then TblBegin('TITLE'#9'ID'#9'KEY'#9'TYPE'#9'ADDED') Else TblBegin('');
+ For I:=0 to L.N-1 do
+  TblRow(JS(L.A[I],'title')+#9+IStr(JI(L.A[I],'id'))+#9+Trunc_(JS(L.A[I],'key'),50)+#9+'authentication'+#9+TimeCell(JS(L.A[I],'created_at')));
+ For I:=0 to S.N-1 do
+  TblRow(JS(S.A[I],'title')+#9+IStr(JI(S.A[I],'id'))+#9+Trunc_(JS(S.A[I],'key'),50)+#9+'signing'+#9+TimeCell(JS(S.A[I],'created_at')));
+ TblPrint;
+End;
+
+Procedure CmdSshKeyAdd;
+Var
+ Txt:AnsiString;
+ F:TSList;
+Begin
+ CmdBegin('ssh-key add','[<key-file>]');
+ Opt('title','t','string','Title for the new key@@Titre de la nouvelle cl'+#130+'');
+ Opt('type','','string','Type of the ssh key: {authentication|signing}@@Type de la cl'+#130+' SSH : {authentication|signing}');
+ ParseArgs(ArgStart);
+ NeedArgs(0,1);
+ InitHostOpt;
+ If(Pos1(0)='')or(Pos1(0)='-')Then Txt:=ReadStdin
+ Else If not ReadAll(Pos1(0),Txt)Then Die('open '+Pos1(0)+': no such file or directory');
+ SClear(F);
+ FS(F,'title',OptGet('title'));FS(F,'key',TrimStr(Txt));
+ If OptGet('type')='signing' Then ApiJ('POST','/user/ssh_signing_keys',ObjOf(F)) Else ApiJ('POST','/user/keys',ObjOf(F));
+ WriteLn(StdErr,#226#156#147' Public key added to your account');
+End;
+
+Procedure CmdSshKeyDelete;
+Var
+ Id:LongInt;
+ R:THttpReq;
+Begin
+ CmdBegin('ssh-key delete','<id>');
+ Opt('yes','y','','Skip the confirmation prompt@@N''affiche pas la confirmation');
+ ParseArgs(ArgStart);
+ NeedArgs(1,1);
+ InitHostOpt;
+ Id:=ToInt(Pos1(0),0);
+ If not OptHas('yes')and InteractiveOk Then
+   If not Confirm('Are you sure you want to delete this SSH key?',False)Then Halt(2);
+ ApiCall(R,'DELETE','/user/keys/'+IStr(Id),'');
+ If R.Status=404 Then ApiMust(R,'DELETE','/user/ssh_signing_keys/'+IStr(Id),'')
+ Else If not ApiOk(R)Then Die(ErrText(R));
+ WriteLn(StdErr,#226#156#147' SSH key ',Id,' deleted from your account');
+End;
+
+Function FirstEmail(N:LongInt):AnsiString;
+Var
+ E:LongInt;
+Begin
+ FirstEmail:='';
+ E:=JGet(N,'emails');
+ If(E>=0)and(JP[E].Cnt>0)Then FirstEmail:=JS(JP[E].First,'email');
+End;
+
+Procedure CmdGpgKeyList;
+Var
+ L:TIList;
+ I:LongInt;
+Begin
+ CmdBegin('gpg-key list','');
+ CmdAlias('ls');
+ ParseArgs(ArgStart);
+ NeedArgs(0,0);
+ InitHostOpt;
+ ApiPagedQ('/user/gpg_keys',0,'',L);
+ If L.N=0 Then Begin WriteLn(StdErr,'No GPG keys present in GitHub account.');Halt(1);End;
+ If OutTTY Then TblBegin('EMAIL'#9'KEY ID'#9'PUBLIC KEY'#9'ADDED'#9'EXPIRES') Else TblBegin('');
+ For I:=0 to L.N-1 do
+  TblRow(FirstEmail(L.A[I])+#9+JS(L.A[I],'key_id')+#9+Trunc_(JS(L.A[I],'public_key'),30)+#9+TimeCell(JS(L.A[I],'created_at'))+#9+
+    IfThen_(JS(L.A[I],'expires_at')<>'',DateOnly(JS(L.A[I],'expires_at')),'Never'));
+ TblPrint;
+End;
+
+Procedure CmdGpgKeyAdd;
+Var
+ Txt:AnsiString;
+ F:TSList;
+Begin
+ CmdBegin('gpg-key add','[<key-file>]');
+ Opt('title','t','string','Title for the new key@@Titre de la nouvelle cl'+#130+'');
+ ParseArgs(ArgStart);
+ NeedArgs(0,1);
+ InitHostOpt;
+ If(Pos1(0)='')or(Pos1(0)='-')Then Txt:=ReadStdin
+ Else If not ReadAll(Pos1(0),Txt)Then Die('open '+Pos1(0)+': no such file or directory');
+ SClear(F);
+ FS(F,'armored_public_key',Txt);
+ If OptHas('title')Then FS(F,'name',OptGet('title'));
+ ApiJ('POST','/user/gpg_keys',ObjOf(F));
+ WriteLn(StdErr,#226#156#147' GPG key added to your account');
+End;
+
+Procedure CmdGpgKeyDelete;
+Var
+ L:TIList;
+ I,Id:LongInt;
+Begin
+ CmdBegin('gpg-key delete','<key-id>');
+ Opt('yes','y','','Skip the confirmation prompt@@N''affiche pas la confirmation');
+ ParseArgs(ArgStart);
+ NeedArgs(1,1);
+ InitHostOpt;
+ ApiPagedQ('/user/gpg_keys',0,'',L);
+ Id:=-1;
+ For I:=0 to L.N-1 do If(JS(L.A[I],'key_id')=Pos1(0))or(IStr(JI(L.A[I],'id'))=Pos1(0))Then Id:=JI(L.A[I],'id');
+ If Id<0 Then Die('unable to delete GPG key '+Pos1(0)+': either the GPG key is not found or it is not owned by you');
+ If not OptHas('yes')and InteractiveOk Then
+   If not Confirm('Are you sure you want to delete this GPG key?',False)Then Halt(2);
+ ApiJ('DELETE','/user/gpg_keys/'+IStr(Id),'');
+ WriteLn(StdErr,#226#156#147' GPG key ',Pos1(0),' deleted from your account');
+End;
+{ ------------------------------------------------------------------ }
+{ Chiffrement des secrets (libsodium crypto_box_seal) : Curve25519,    }
+{ XSalsa20, Poly1305, BLAKE2b                                          }
+{ ------------------------------------------------------------------ }
+
+Type
+ TGf = Array[0..15]of Int64;
+ TB32 = Array[0..31]of Byte;
+ TB24 = Array[0..23]of Byte;
+ TB16 = Array[0..15]of Byte;
+
+{ decalage arithmetique a droite }
+Function Sar(X:Int64;N:Byte):Int64;
+Begin
+ If X>=0 Then Sar:=X shr N Else Sar:=not((not X)shr N);
+End;
+
+Procedure Car25519(Var O:TGf);
+Var
+ I:LongInt;
+ C:Int64;
+Begin
+ For I:=0 to 15 do Begin
+  O[I]:=O[I]+(Int64(1)shl 16);
+  C:=Sar(O[I],16);
+  If I<15 Then O[I+1]:=O[I+1]+C-1
+  Else O[0]:=O[0]+C-1+37*(C-1);
+  O[I]:=O[I]-(C shl 16);
+ End;
+End;
+
+Procedure Sel25519(Var P,Q:TGf;B:LongInt);
+Var
+ T,C:Int64;
+ I:LongInt;
+Begin
+ C:=not Int64(B-1);
+ For I:=0 to 15 do Begin
+  T:=C and(P[I]xor Q[I]);
+  P[I]:=P[I]xor T;
+  Q[I]:=Q[I]xor T;
+ End;
+End;
+
+Procedure Pack25519(Var O:TB32;Const N:TGf);
+Var
+ I,J,B:LongInt;
+ M,T:TGf;
+Begin
+ T:=N;
+ Car25519(T);Car25519(T);Car25519(T);
+ For J:=0 to 1 do Begin
+  M[0]:=T[0]-$FFED;
+  For I:=1 to 14 do Begin
+   M[I]:=T[I]-$FFFF-(Sar(M[I-1],16)and 1);
+   M[I-1]:=M[I-1]and $FFFF;
+  End;
+  M[15]:=T[15]-$7FFF-(Sar(M[14],16)and 1);
+  B:=Sar(M[15],16)and 1;
+  M[14]:=M[14]and $FFFF;
+  Sel25519(T,M,1-B);
+ End;
+ For I:=0 to 15 do Begin
+  O[2*I]:=T[I]and $FF;
+  O[2*I+1]:=T[I]shr 8;
+ End;
+End;
+
+Procedure Unpack25519(Var O:TGf;Const N:TB32);
+Var
+ I:LongInt;
+Begin
+ For I:=0 to 15 do O[I]:=N[2*I]+(Int64(N[2*I+1])shl 8);
+ O[15]:=O[15]and $7FFF;
+End;
+
+Procedure GfAdd(Var O:TGf;Const A,B:TGf);
+Var
+ I:LongInt;
+Begin
+ For I:=0 to 15 do O[I]:=A[I]+B[I];
+End;
+
+Procedure GfSub(Var O:TGf;Const A,B:TGf);
+Var
+ I:LongInt;
+Begin
+ For I:=0 to 15 do O[I]:=A[I]-B[I];
+End;
+
+Procedure GfMul(Var O:TGf;Const A,B:TGf);
+Var
+ I,J:LongInt;
+ T:Array[0..30]of Int64;
+Begin
+ For I:=0 to 30 do T[I]:=0;
+ For I:=0 to 15 do
+  For J:=0 to 15 do T[I+J]:=T[I+J]+A[I]*B[J];
+ For I:=0 to 14 do T[I]:=T[I]+38*T[I+16];
+ For I:=0 to 15 do O[I]:=T[I];
+ Car25519(O);Car25519(O);
+End;
+
+Procedure GfInv(Var O:TGf;Const I_:TGf);
+Var
+ C:TGf;
+ A:LongInt;
+Begin
+ C:=I_;
+ For A:=253 downto 0 do Begin
+  GfMul(C,C,C);
+  If(A<>2)and(A<>4)Then GfMul(C,C,I_);
+ End;
+ O:=C;
+End;
+
+Procedure ScalarMult(Var Q:TB32;Const N,P:TB32);
+Var
+ Z:TB32;
+ X:TGf;
+ R:LongInt;
+ I:LongInt;
+ A,B,C,D,E,F,C121665,X1:TGf;
+Begin
+ For I:=0 to 31 do Z[I]:=N[I];
+ Z[31]:=(N[31]and 127)or 64;
+ Z[0]:=Z[0]and 248;
+ Unpack25519(X1,P);
+ For I:=0 to 15 do Begin B[I]:=X1[I];D[I]:=0;A[I]:=0;C[I]:=0;End;
+ A[0]:=1;D[0]:=1;
+ For I:=0 to 15 do C121665[I]:=0;
+ C121665[0]:=$DB41;C121665[1]:=1;
+ For I:=254 downto 0 do Begin
+  R:=(Z[I shr 3]shr(I and 7))and 1;
+  Sel25519(A,B,R);
+  Sel25519(C,D,R);
+  GfAdd(E,A,C);
+  GfSub(A,A,C);
+  GfAdd(C,B,D);
+  GfSub(B,B,D);
+  GfMul(D,E,E);
+  GfMul(F,A,A);
+  GfMul(A,C,A);
+  GfMul(C,B,E);
+  GfAdd(E,A,C);
+  GfSub(A,A,C);
+  GfMul(B,A,A);
+  GfSub(C,D,F);
+  GfMul(A,C,C121665);
+  GfAdd(A,A,D);
+  GfMul(C,C,A);
+  GfMul(A,D,F);
+  GfMul(D,B,X1);
+  GfMul(B,E,E);
+  Sel25519(A,B,R);
+  Sel25519(C,D,R);
+ End;
+ GfInv(C,C);
+ GfMul(A,A,C);
+ Pack25519(Q,A);
+End;
+
+Procedure ScalarMultBase(Var Q:TB32;Const N:TB32);
+Var
+ Base:TB32;
+ I:LongInt;
+Begin
+ For I:=0 to 31 do Base[I]:=0;
+ Base[0]:=9;
+ ScalarMult(Q,N,Base);
+End;
+
+{ ---------- Salsa20 ---------- }
+
+Function Rl32(X:LongWord;N:Byte):LongWord;
+Begin
+ Rl32:=(X shl N)or(X shr(32-N));
+End;
+
+Function Ld32(Const B:Array of Byte;Ofs:LongInt):LongWord;
+Begin
+ Ld32:=LongWord(B[Ofs])or(LongWord(B[Ofs+1])shl 8)or(LongWord(B[Ofs+2])shl 16)or(LongWord(B[Ofs+3])shl 24);
+End;
+
+Procedure St32(Var B:Array of Byte;Ofs:LongInt;X:LongWord);
+Begin
+ B[Ofs]:=X and $FF;B[Ofs+1]:=(X shr 8)and $FF;B[Ofs+2]:=(X shr 16)and $FF;B[Ofs+3]:=X shr 24;
+End;
+
+Const
+ Sigma:Array[0..15]of Byte=(101,120,112,97,110,100,32,51,50,45,98,121,116,101,32,107);
+
+{ coeur de Salsa20 ; Hs = True : variante HSalsa20 (sortie 32 octets) }
+Procedure SalsaCore(Var Outp:Array of Byte;Const Inp:TB16;Const K:TB32;Hs:Boolean);
+Var
+ W,X,Y:Array[0..15]of LongWord;
+ T:Array[0..3]of LongWord;
+ I,J,M:LongInt;
+Begin
+ W[0]:=Ld32(Sigma,0);W[5]:=Ld32(Sigma,4);W[10]:=Ld32(Sigma,8);W[15]:=Ld32(Sigma,12);
+ W[1]:=Ld32(K,0);W[2]:=Ld32(K,4);W[3]:=Ld32(K,8);W[4]:=Ld32(K,12);
+ W[11]:=Ld32(K,16);W[12]:=Ld32(K,20);W[13]:=Ld32(K,24);W[14]:=Ld32(K,28);
+ W[6]:=Ld32(Inp,0);W[7]:=Ld32(Inp,4);W[8]:=Ld32(Inp,8);W[9]:=Ld32(Inp,12);
+ For I:=0 to 15 do Y[I]:=W[I];
+ For I:=0 to 19 do Begin
+  For J:=0 to 3 do Begin
+   For M:=0 to 3 do T[M]:=Y[(5*J+4*M)mod 16];
+   T[1]:=T[1]xor Rl32(T[0]+T[3],7);
+   T[2]:=T[2]xor Rl32(T[1]+T[0],9);
+   T[3]:=T[3]xor Rl32(T[2]+T[1],13);
+   T[0]:=T[0]xor Rl32(T[3]+T[2],18);
+   For M:=0 to 3 do X[(4*J+(J+M)mod 4)]:=T[M];
+  End;
+  For M:=0 to 15 do Y[M]:=X[M];
+ End;
+ If Hs Then Begin
+  For I:=0 to 15 do Y[I]:=Y[I]; { sortie : mots 0,5,10,15,6,7,8,9 }
+  St32(Outp,0,Y[0]);St32(Outp,4,Y[5]);St32(Outp,8,Y[10]);St32(Outp,12,Y[15]);
+  St32(Outp,16,Y[6]);St32(Outp,20,Y[7]);St32(Outp,24,Y[8]);St32(Outp,28,Y[9]);
+ End
+ Else Begin
+  For I:=0 to 15 do St32(Outp,4*I,Y[I]+W[I]);
+ End;
+End;
+
+Procedure HSalsa20(Var Outp:TB32;Const N:TB16;Const K:TB32);
+Begin
+ SalsaCore(Outp,N,K,True);
+End;
+
+{ flux XSalsa20 xor : M peut etre nul pour obtenir le flux brut }
+Procedure XSalsaXor(Var C:Array of Byte;Const M:Array of Byte;Len:LongInt;Const Nonce:TB24;Const K:TB32;Skip:LongInt);
+Var
+ S:TB32;
+ N16,Z:TB16;
+ I,J,Pos_:LongInt;
+ Blk:Array[0..63]of Byte;
+ Cnt:Int64;
+ Tot:LongInt;
+Begin
+ For I:=0 to 15 do N16[I]:=Nonce[I];
+ HSalsa20(S,N16,K);
+ For I:=0 to 7 do Z[I]:=Nonce[16+I];
+ For I:=8 to 15 do Z[I]:=0;
+ Tot:=Len+Skip;
+ Pos_:=0;Cnt:=0;
+ While Pos_<Tot do Begin
+  SalsaCore(Blk,Z,S,False);
+  For J:=0 to 63 do Begin
+   If(Pos_+J>=Skip)and(Pos_+J<Tot)Then C[Pos_+J-Skip]:=Blk[J]xor M[Pos_+J-Skip];
+  End;
+  Inc(Pos_,64);
+  { compteur sur 8 octets (little endian) }
+  I:=8;
+  Repeat
+   Z[I]:=Z[I]+1;
+   If Z[I]<>0 Then Break;
+   Inc(I);
+  Until I>15;
+ End;
+End;
+
+{ ---------- Poly1305 (TweetNaCl) ---------- }
+
+Procedure Add1305(Var H:Array of LongWord;Const C:Array of LongWord);
+Var
+ J:LongInt;
+ U:LongWord;
+Begin
+ U:=0;
+ For J:=0 to 16 do Begin
+  U:=U+H[J]+C[J];
+  H[J]:=U and 255;
+  U:=U shr 8;
+ End;
+End;
+
+Procedure Poly1305(Var Outp:TB16;Const M:Array of Byte;N:LongInt;Const K:TB32);
+Const
+ MinusP:Array[0..16]of LongWord=(5,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,252);
+Var
+ S,U:LongWord;
+ I,J,Pm:LongInt;
+ X,R,H,C,G:Array[0..16]of LongWord;
+Begin
+ For J:=0 to 16 do Begin R[J]:=0;H[J]:=0;End;
+ For J:=0 to 15 do R[J]:=K[J];
+ R[3]:=R[3]and 15;R[4]:=R[4]and 252;R[7]:=R[7]and 15;R[8]:=R[8]and 252;
+ R[11]:=R[11]and 15;R[12]:=R[12]and 252;R[15]:=R[15]and 15;
+ Pm:=0;
+ While N>0 do Begin
+  For J:=0 to 16 do C[J]:=0;
+  J:=0;
+  While(J<16)and(J<N)do Begin C[J]:=M[Pm+J];Inc(J);End;
+  C[J]:=1;
+  Inc(Pm,J);Dec(N,J);
+  Add1305(H,C);
+  For I:=0 to 16 do Begin
+   X[I]:=0;
+   For J:=0 to 16 do
+    If J<=I Then X[I]:=X[I]+H[J]*R[I-J] Else X[I]:=X[I]+H[J]*(320*R[I+17-J]);
+  End;
+  For I:=0 to 16 do H[I]:=X[I];
+  U:=0;
+  For J:=0 to 15 do Begin U:=U+H[J];H[J]:=U and 255;U:=U shr 8;End;
+  U:=U+H[16];H[16]:=U and 3;
+  U:=5*(U shr 2);
+  For J:=0 to 15 do Begin U:=U+H[J];H[J]:=U and 255;U:=U shr 8;End;
+  U:=U+H[16];H[16]:=U;
+ End;
+ For J:=0 to 16 do G[J]:=H[J];
+ Add1305(H,MinusP);
+ S:=LongWord(0)-(H[16]shr 7);
+ For J:=0 to 16 do H[J]:=H[J]xor(S and(G[J]xor H[J]));
+ For J:=0 to 15 do C[J]:=K[J+16];
+ C[16]:=0;
+ Add1305(H,C);
+ For J:=0 to 15 do Outp[J]:=H[J]and $FF;
+End;
+
+{ crypto_secretbox : sortie = etiquette (16) + chiffre }
+Procedure SecretBox(Var Outp:Array of Byte;Const M:Array of Byte;Len:LongInt;Const Nonce:TB24;Const K:TB32);
+Var
+ Z,Tmp:Array of Byte;
+ I:LongInt;
+ PK:TB32;
+ Tag:TB16;
+ Ct:Array of Byte;
+ Zero:Array of Byte;
+Begin
+ SetLength(Ct,Len);SetLength(Zero,Len);
+ For I:=0 to Len-1 do Zero[I]:=0;
+ { cle poly = 32 premiers octets du flux }
+ SetLength(Z,32);SetLength(Tmp,32);
+ For I:=0 to 31 do Tmp[I]:=0;
+ XSalsaXor(Z,Tmp,32,Nonce,K,0);
+ For I:=0 to 31 do PK[I]:=Z[I];
+ If Len>0 Then XSalsaXor(Ct,M,Len,Nonce,K,32);
+ Poly1305(Tag,Ct,Len,PK);
+ For I:=0 to 15 do Outp[I]:=Tag[I];
+ For I:=0 to Len-1 do Outp[16+I]:=Ct[I];
+End;
+
+{ ---------- BLAKE2b (24 octets) ---------- }
+
+Const
+ B2IV:Array[0..7]of QWord=(
+  QWord($6A09E667F3BCC908),QWord($BB67AE8584CAA73B),QWord($3C6EF372FE94F82B),QWord($A54FF53A5F1D36F1),
+  QWord($510E527FADE682D1),QWord($9B05688C2B3E6C1F),QWord($1F83D9ABFB41BD6B),QWord($5BE0CD19137E2179));
+ B2Sigma:Array[0..9,0..15]of Byte=(
+  (0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15),(14,10,4,8,9,15,13,6,1,12,0,2,11,7,5,3),
+  (11,8,12,0,5,2,15,13,10,14,3,6,7,1,9,4),(7,9,3,1,13,12,11,14,2,6,5,10,4,0,15,8),
+  (9,0,5,7,2,4,10,15,14,1,11,12,6,8,3,13),(2,12,6,10,0,11,8,3,4,13,7,5,15,14,1,9),
+  (12,5,1,15,14,13,4,10,0,7,6,3,9,2,8,11),(13,11,7,14,12,1,3,9,5,0,15,4,8,6,2,10),
+  (6,15,14,9,11,3,0,8,12,2,13,7,1,4,10,5),(10,2,8,4,7,6,1,5,15,11,9,14,3,12,13,0));
+
+Function Rr64(X:QWord;N:Byte):QWord;
+Begin
+ Rr64:=(X shr N)or(X shl(64-N));
+End;
+
+Procedure Blake2b(Var Outp:Array of Byte;OutLen:LongInt;Const Data:Array of Byte;Len:LongInt);
+Var
+ H:Array[0..7]of QWord;
+ V,M:Array[0..15]of QWord;
+ Blk:Array[0..127]of Byte;
+ I,J,R,Pos_,N:LongInt;
+ T:QWord;
+ Last:Boolean;
+ Procedure G(A,B,C,D:LongInt;X,Y:QWord);
+ Begin
+  V[A]:=V[A]+V[B]+X;V[D]:=Rr64(V[D]xor V[A],32);
+  V[C]:=V[C]+V[D];V[B]:=Rr64(V[B]xor V[C],24);
+  V[A]:=V[A]+V[B]+Y;V[D]:=Rr64(V[D]xor V[A],16);
+  V[C]:=V[C]+V[D];V[B]:=Rr64(V[B]xor V[C],63);
+ End;
+Begin
+ For I:=0 to 7 do H[I]:=B2IV[I];
+ H[0]:=H[0]xor $01010000 xor QWord(OutLen);
+ Pos_:=0;T:=0;
+ Repeat
+  N:=Len-Pos_;
+  If N>128 Then N:=128;
+  Last:=(Pos_+N>=Len);
+  FillChar(Blk,128,0);
+  For I:=0 to N-1 do Blk[I]:=Data[Pos_+I];
+  Inc(T,N);
+  For I:=0 to 15 do Begin
+   M[I]:=0;
+   For J:=7 downto 0 do M[I]:=(M[I]shl 8)or Blk[I*8+J];
+  End;
+  For I:=0 to 7 do Begin V[I]:=H[I];V[I+8]:=B2IV[I];End;
+  V[12]:=V[12]xor T;
+  If Last Then V[14]:=not V[14];
+  For R:=0 to 11 do Begin
+   G(0,4,8,12,M[B2Sigma[R mod 10][0]],M[B2Sigma[R mod 10][1]]);
+   G(1,5,9,13,M[B2Sigma[R mod 10][2]],M[B2Sigma[R mod 10][3]]);
+   G(2,6,10,14,M[B2Sigma[R mod 10][4]],M[B2Sigma[R mod 10][5]]);
+   G(3,7,11,15,M[B2Sigma[R mod 10][6]],M[B2Sigma[R mod 10][7]]);
+   G(0,5,10,15,M[B2Sigma[R mod 10][8]],M[B2Sigma[R mod 10][9]]);
+   G(1,6,11,12,M[B2Sigma[R mod 10][10]],M[B2Sigma[R mod 10][11]]);
+   G(2,7,8,13,M[B2Sigma[R mod 10][12]],M[B2Sigma[R mod 10][13]]);
+   G(3,4,9,14,M[B2Sigma[R mod 10][14]],M[B2Sigma[R mod 10][15]]);
+  End;
+  For I:=0 to 7 do H[I]:=H[I]xor V[I]xor V[I+8];
+  Inc(Pos_,N);
+ Until Last;
+ For I:=0 to OutLen-1 do Outp[I]:=Byte((H[I shr 3]shr(8*(I and 7)))and $FF);
+End;
+
+{ octets aleatoires du systeme }
+{$IFDEF WINDOWS}
+Function SystemFunction036(Buf:Pointer;Len:LongWord):ByteBool;stdcall;external 'advapi32.dll' name 'SystemFunction036';
+{$ENDIF}
+
+Procedure RandBytes(Var B:Array of Byte;N:LongInt);
+Var
+ F:File;
+ I:LongInt;
+Begin
+ {$IFDEF WINDOWS}
+ If not SystemFunction036(@B[0],N)Then Die('cannot generate random bytes');
+ {$ELSE}
+ Assign(F,'/dev/urandom');
+ {$I-}Reset(F,1);{$I+}
+ If IOResult<>0 Then Die('cannot open /dev/urandom');
+ BlockRead(F,B[0],N);
+ Close(F);
+ {$ENDIF}
+End;
+
+{ chiffre Msg avec la cle publique (base64) comme crypto_box_seal ; renvoie le resultat en base64 }
+Function SealedBox(Const Msg,PubB64:AnsiString):AnsiString;
+Var
+ Pk,PkE,SkE,Shared,K:TB32;
+ Nonce:TB24;
+ Tmp:Array of Byte;
+ Hbuf:Array of Byte;
+ Mb,Outb:Array of Byte;
+ Z16:TB16;
+ PubRaw:AnsiString;
+ I,N:LongInt;
+ R:AnsiString;
+ Sk:Array of Byte;
+Begin
+ PubRaw:=B64Dec(PubB64);
+ If Length(PubRaw)<>32 Then Die('invalid public key length');
+ For I:=0 to 31 do Pk[I]:=Ord(PubRaw[I+1]);
+ SetLength(Sk,32);
+ RandBytes(Sk,32);
+ For I:=0 to 31 do SkE[I]:=Sk[I];
+ ScalarMultBase(PkE,SkE);
+ { nonce = blake2b-24(pk_e || pk) }
+ SetLength(Hbuf,64);
+ For I:=0 to 31 do Begin Hbuf[I]:=PkE[I];Hbuf[32+I]:=Pk[I];End;
+ SetLength(Tmp,24);
+ Blake2b(Tmp,24,Hbuf,64);
+ For I:=0 to 23 do Nonce[I]:=Tmp[I];
+ { cle partagee = HSalsa20(0, X25519(sk_e, pk)) }
+ ScalarMult(Shared,SkE,Pk);
+ For I:=0 to 15 do Z16[I]:=0;
+ HSalsa20(K,Z16,Shared);
+ N:=Length(Msg);
+ SetLength(Mb,N+1);
+ For I:=1 to N do Mb[I-1]:=Ord(Msg[I]);
+ SetLength(Outb,N+16);
+ SecretBox(Outb,Mb,N,Nonce,K);
+ SetLength(R,32+N+16);
+ For I:=0 to 31 do R[I+1]:=Chr(PkE[I]);
+ For I:=0 to N+15 do R[33+I]:=Chr(Outb[I]);
+ SealedBox:=B64Str(R);
+End;
+
+{ ------------------------------------------------------------------ }
+{ gh secret, gh variable                                              }
+{ ------------------------------------------------------------------ }
+
+Var
+ ScopeOrg,ScopeEnv,ScopeApp:AnsiString;
+ ScopeUser:Boolean;
+
+{ chemin de base des secrets/variables selon les options }
+Function ScopeBase(Const Kind:AnsiString):AnsiString;
+Var
+ App:AnsiString;
+ J:LongInt;
+Begin
+ ScopeOrg:=OptGet('org');ScopeEnv:=OptGet('env');ScopeUser:=OptHas('user');
+ App:=LoStr(OptGetDef('app','actions'));
+ If(App<>'actions')and(App<>'codespaces')and(App<>'dependabot')Then
+   Die2('--app must be one of "actions", "codespaces", or "dependabot"',1);
+ ScopeApp:=App;
+ If ScopeUser Then Begin
+  InitHostOpt;
+  ScopeBase:='/user/codespaces/secrets';
+  Exit;
+ End;
+ If ScopeOrg<>'' Then Begin
+  InitHostOpt;
+  If(ScopeOrg='')Then Die('organization required');
+  ScopeBase:='/orgs/'+PathEnc(ScopeOrg)+'/'+App+'/'+Kind;
+  Exit;
+ End;
+ NeedRepo;
+ If ScopeEnv<>'' Then Begin
+  J:=ApiJ('GET',RepoApi(''),'');
+  ScopeBase:='/repositories/'+IStr(JI(J,'id'))+'/environments/'+PathEnc(ScopeEnv)+'/'+Kind;
+ End
+ Else ScopeBase:=RepoApi('/'+App+'/'+Kind);
+End;
+
+Function ScopeLabel:AnsiString;
+Begin
+ If ScopeUser Then ScopeLabel:='your user'
+ Else If ScopeOrg<>'' Then ScopeLabel:=ScopeOrg
+ Else If ScopeEnv<>'' Then ScopeLabel:=RepoFull+' ('+ScopeEnv+')'
+ Else ScopeLabel:=RepoFull;
+End;
+
+Procedure ScopeOpts(Secret:Boolean);
+Begin
+ If Secret Then Opt('app','a','string','Set the application for a secret: {actions|codespaces|dependabot}@@Application du secret : {actions|codespaces|dependabot}');
+ Opt('env','e','string','Delete a secret for an environment@@Cible un environnement');
+ Opt('org','o','string','Delete a secret for an organization@@Cible une organisation');
+ OptRepo;
+ If Secret Then Opt('user','u','','Delete a secret for your user@@Cible votre utilisateur');
+End;
+
+{ lit un fichier .env : lignes CLE=VALEUR }
+Procedure ReadEnvFile(Const Path:AnsiString;Var K,V:TSList);
+Var
+ Txt:AnsiString;
+ L:TSList;
+ I,P:LongInt;
+ Ln:AnsiString;
+Begin
+ SClear(K);SClear(V);
+ If Path='-' Then Txt:=ReadStdin
+ Else If not ReadAll(Path,Txt)Then Die('open '+Path+': no such file or directory');
+ SplitStr(ReplaceAll(Txt,#13,''),#10,L);
+ For I:=0 to L.N-1 do Begin
+  Ln:=TrimStr(L.A[I]);
+  If(Ln='')or(Ln[1]='#')Then Continue;
+  If StartsWith(Ln,'export ')Then Ln:=TrimStr(Copy(Ln,8,Length(Ln)));
+  P:=Pos('=',Ln);
+  If P=0 Then Continue;
+  SAdd(K,Copy(Ln,1,P-1));
+  Ln:=Copy(Ln,P+1,Length(Ln));
+  If(Length(Ln)>=2)and(Ln[1]in['"',''''])and(Ln[Length(Ln)]=Ln[1])Then Ln:=Copy(Ln,2,Length(Ln)-2);
+  SAdd(V,Ln);
+ End;
+End;
+
+Function RepoIdsJson(Const Repos:TSList):AnsiString;
+Var
+ L:TSList;
+ I:LongInt;
+ J:LongInt;
+Begin
+ SClear(L);
+ For I:=0 to Repos.N-1 do Begin
+  J:=ApiJ('GET','/repos/'+ScopeOrg+'/'+Repos.A[I],'');
+  SAdd(L,IStr(JI(J,'id')));
+ End;
+ RepoIdsJson:='['+JoinList(L,',')+']';
+End;
+
+Procedure PutSecret(Const Base,Nm,Val_:AnsiString);
+Var
+ K:LongInt;
+ F:TSList;
+ Enc,Vis:AnsiString;
+ Repos:TSList;
+Begin
+ K:=ApiJ('GET',Base+'/public-key','');
+ Enc:=SealedBox(Val_,JS(K,'key'));
+ If OptHas('no-store')Then Begin WriteLn(Enc);Exit;End;
+ SClear(F);
+ FS(F,'encrypted_value',Enc);
+ FS(F,'key_id',JS(K,'key_id'));
+ If ScopeOrg<>'' Then Begin
+  Vis:=LoStr(OptGetDef('visibility','private'));
+  If OptHas('repos')Then Vis:='selected';
+  If(Vis<>'all')and(Vis<>'private')and(Vis<>'selected')Then Die2('--visibility must be one of "all", "private", or "selected"',1);
+  FS(F,'visibility',Vis);
+  If Vis='selected' Then Begin
+   OptCsv('repos',Repos);
+   FR(F,'selected_repository_ids',RepoIdsJson(Repos));
+  End;
+ End
+ Else If ScopeUser Then Begin
+  OptCsv('repos',Repos);
+  If Repos.N>0 Then Begin
+   ScopeOrg:='';
+   FR(F,'selected_repository_ids',RepoIdsJson(Repos));
+  End;
+ End;
+ ApiJ('PUT',Base+'/'+PathEnc(Nm),ObjOf(F));
+ WriteLn(StdErr,#226#156#147' Set ',IfThen_(ScopeApp='actions','Actions',IfThen_(ScopeApp='codespaces','Codespaces','Dependabot')),
+   ' secret ',Nm,' for ',ScopeLabel);
+End;
+
+Procedure CmdSecretSet;
+Var
+ Base,Nm,Val_:AnsiString;
+ Ks,Vs:TSList;
+ I:LongInt;
+Begin
+ CmdBegin('secret set','<secret-name>');
+ ScopeOpts(True);
+ Opt('body','b','string','The value for the secret (reads from standard input if not specified)@@La valeur du secret (lue sur l''entr'+#130+'e standard sinon)');
+ Opt('env-file','f','file','Load secret names and values from a dotenv-formatted file@@Charge les noms et valeurs depuis un fichier dotenv');
+ Opt('no-repos-selected','','','No repositories can access the organization secret@@Aucun d'+#130+'p'+#147+'t ne peut acc'+#130+'der au secret d''organisation');
+ Opt('no-store','','','Print the encrypted, base64-encoded value instead of storing it on GitHub@@Affiche la valeur chiffr'+#130+'e en base64 au lieu de l''enregistrer');
+ Opt('repos','r','*repositories','List of repositories that can access an organization or user secret@@D'+#130+'p'+#147+'ts pouvant acc'+#130+'der au secret d''organisation ou d''utilisateur');
+ Opt('visibility','v','string','Set visibility for an organization secret: {all|private|selected} (default "private")@@Visibilit'+#130+' du secret d''organisation : {all|private|selected}');
+ ParseArgs(ArgStart);
+ If OptHas('env-file')Then NeedArgs(0,0) Else NeedArgs(1,1);
+ Base:=ScopeBase('secrets');
+ If OptHas('env-file')Then Begin
+  ReadEnvFile(OptGet('env-file'),Ks,Vs);
+  For I:=0 to Ks.N-1 do PutSecret(Base,Ks.A[I],Vs.A[I]);
+  Exit;
+ End;
+ Nm:=Pos1(0);
+ If OptHas('body')Then Val_:=OptGet('body')
+ Else If InTTY Then Val_:=ReadSecret('? Paste your secret: ')
+ Else Begin
+  Val_:=ReadStdin;
+  While(Val_<>'')and(Val_[Length(Val_)]in[#10,#13])do Delete(Val_,Length(Val_),1);
+ End;
+ If Val_='' Then Die2('secret value cannot be blank',1);
+ PutSecret(Base,Nm,Val_);
+End;
+
+Procedure CmdSecretList;
+Var
+ Base:AnsiString;
+ L:TIList;
+ T:Int64;
+ I:LongInt;
+ Spec:AnsiString;
+Begin
+ CmdBegin('secret list','');
+ CmdAlias('ls');
+ ScopeOpts(True);
+ OptJsonAll;
+ CmdJson('name,numSelectedRepos,selectedReposURL,updatedAt,visibility');
+ ParseArgs(ArgStart);
+ NeedArgs(0,0);
+ JsonSetup('name,numSelectedRepos,selectedReposURL,updatedAt,visibility');
+ Base:=ScopeBase('secrets');
+ ApiPaged(Base,0,'secrets',L,T);
+ If UseJson Then Begin
+  Spec:='name=name:s;numSelectedRepos=selected_repositories_count:n;selectedReposURL=selected_repositories_url:s;updatedAt=updated_at:s;visibility=visibility:s';
+  EmitItems(L,Spec,Nil);Exit;
+ End;
+ If L.N=0 Then Begin WriteLn(StdErr,'No secrets found in ',ScopeLabel);Halt(0);End;
+ TblBegin('');
+ For I:=0 to L.N-1 do
+  TblRow(JS(L.A[I],'name')+#9+TimeCell(JS(L.A[I],'updated_at'))+IfThen_(ScopeOrg<>'',#9+UpStr(JS(L.A[I],'visibility')),''));
+ TblPrint;
+End;
+
+Procedure CmdSecretDelete;
+Var
+ Base:AnsiString;
+Begin
+ CmdBegin('secret delete','<secret-name>');
+ ScopeOpts(True);
+ ParseArgs(ArgStart);
+ NeedArgs(1,1);
+ Base:=ScopeBase('secrets');
+ ApiJ('DELETE',Base+'/'+PathEnc(Pos1(0)),'');
+ WriteLn(StdErr,#226#156#147' Deleted secret ',Pos1(0),' from ',ScopeLabel);
+End;
+
+Procedure CmdVariableSet;
+Var
+ Base,Val_,Nm,Vis:AnsiString;
+ Ks,Vs:TSList;
+ I:LongInt;
+ R:THttpReq;
+ F:TSList;
+ Repos:TSList;
+ Names:TSList;
+ Procedure One(Const N_,V_:AnsiString);
+ Begin
+  SClear(F);
+  FS(F,'name',N_);FS(F,'value',V_);
+  If ScopeOrg<>'' Then Begin
+   Vis:=LoStr(OptGetDef('visibility','private'));
+   If OptHas('repos')Then Vis:='selected';
+   FS(F,'visibility',Vis);
+   If Vis='selected' Then Begin OptCsv('repos',Repos);FR(F,'selected_repository_ids',RepoIdsJson(Repos));End;
+  End;
+  ApiCall(R,'POST',Base,ObjOf(F));
+  If ApiOk(R)Then Begin
+   WriteLn(StdErr,#226#156#147' Created variable ',N_,' for ',ScopeLabel);
+   Exit;
+  End;
+  If R.Status=409 Then Begin
+   SClear(F);
+   FS(F,'name',N_);FS(F,'value',V_);
+   If ScopeOrg<>'' Then Begin
+    FS(F,'visibility',Vis);
+    If Vis='selected' Then FR(F,'selected_repository_ids',RepoIdsJson(Repos));
+   End;
+   ApiJ('PATCH',Base+'/'+PathEnc(N_),ObjOf(F));
+   WriteLn(StdErr,#226#156#147' Updated variable ',N_,' for ',ScopeLabel);
+   Exit;
+  End;
+  Die(ErrText(R));
+ End;
+Begin
+ CmdBegin('variable set','<variable-name>');
+ ScopeOpts(False);
+ Opt('body','b','string','The value for the variable (reads from standard input if not specified)@@La valeur de la variable (lue sur l''entr'+#130+'e standard sinon)');
+ Opt('env-file','f','file','Load variable names and values from a dotenv-formatted file@@Charge les noms et valeurs depuis un fichier dotenv');
+ Opt('repos','r','*repositories','List of repositories that can access an organization variable@@D'+#130+'p'+#147+'ts pouvant acc'+#130+'der '+#133+' la variable d''organisation');
+ Opt('visibility','v','string','Set visibility for an organization variable: {all|private|selected}@@Visibilit'+#130+' de la variable d''organisation : {all|private|selected}');
+ ParseArgs(ArgStart);
+ If OptHas('env-file')Then NeedArgs(0,0) Else NeedArgs(1,1);
+ Base:=ScopeBase('variables');
+ If OptHas('env-file')Then Begin
+  ReadEnvFile(OptGet('env-file'),Ks,Vs);
+  For I:=0 to Ks.N-1 do One(Ks.A[I],Vs.A[I]);
+  Exit;
+ End;
+ If OptHas('body')Then Val_:=OptGet('body')
+ Else If InTTY Then Val_:=AskLine('Paste your variable','')
+ Else Begin
+  Val_:=ReadStdin;
+  While(Val_<>'')and(Val_[Length(Val_)]in[#10,#13])do Delete(Val_,Length(Val_),1);
+ End;
+ One(Pos1(0),Val_);
+End;
+
+Procedure CmdVariableList;
+Var
+ Base:AnsiString;
+ L:TIList;
+ T:Int64;
+ I:LongInt;
+ Spec:AnsiString;
+Begin
+ CmdBegin('variable list','');
+ CmdAlias('ls');
+ ScopeOpts(False);
+ OptJsonAll;
+ CmdJson('createdAt,name,numSelectedRepos,selectedReposURL,updatedAt,value,visibility');
+ ParseArgs(ArgStart);
+ NeedArgs(0,0);
+ JsonSetup('createdAt,name,numSelectedRepos,selectedReposURL,updatedAt,value,visibility');
+ Base:=ScopeBase('variables');
+ ApiPaged(Base,0,'variables',L,T);
+ If UseJson Then Begin
+  Spec:='createdAt=created_at:s;name=name:s;numSelectedRepos=selected_repositories_count:n;selectedReposURL=selected_repositories_url:s;updatedAt=updated_at:s;value=value:s;visibility=visibility:s';
+  EmitItems(L,Spec,Nil);Exit;
+ End;
+ If L.N=0 Then Begin WriteLn(StdErr,'No variables found in ',ScopeLabel);Halt(0);End;
+ If OutTTY Then TblBegin('NAME'#9'VALUE'#9'UPDATED') Else TblBegin('');
+ For I:=0 to L.N-1 do
+  TblRow(JS(L.A[I],'name')+#9+Trunc_(JS(L.A[I],'value'),50)+#9+TimeCell(JS(L.A[I],'updated_at')));
+ TblPrint;
+End;
+
+Procedure CmdVariableGet;
+Var
+ Base:AnsiString;
+ J:LongInt;
+Begin
+ CmdBegin('variable get','<variable-name>');
+ ScopeOpts(False);
+ ParseArgs(ArgStart);
+ NeedArgs(1,1);
+ Base:=ScopeBase('variables');
+ J:=ApiJ('GET',Base+'/'+PathEnc(Pos1(0)),'');
+ WriteLn(JS(J,'value'));
+End;
+
+Procedure CmdVariableDelete;
+Var
+ Base:AnsiString;
+Begin
+ CmdBegin('variable delete','<variable-name>');
+ ScopeOpts(False);
+ ParseArgs(ArgStart);
+ NeedArgs(1,1);
+ Base:=ScopeBase('variables');
+ ApiJ('DELETE',Base+'/'+PathEnc(Pos1(0)),'');
+ WriteLn(StdErr,#226#156#147' Deleted variable ',Pos1(0),' from ',ScopeLabel);
+End;
+{ ------------------------------------------------------------------ }
+{ gh search, gh ruleset                                               }
+{ ------------------------------------------------------------------ }
+
+Const
+ SrRepoFields='createdAt,defaultBranch,description,forksCount,fullName,hasDownloads,hasIssues,hasPages,hasProjects,'+
+  'hasWiki,homepage,id,isArchived,isDisabled,isFork,isPrivate,language,license,name,openIssuesCount,owner,pushedAt,'+
+  'size,stargazersCount,updatedAt,url,visibility,watchersCount';
+ SrRepoSpec='createdAt=created_at:s;defaultBranch=default_branch:s;description=description:s;forksCount=forks_count:n;'+
+  'fullName=full_name:s;hasDownloads=has_downloads:b;hasIssues=has_issues:b;hasPages=has_pages:b;'+
+  'hasProjects=has_projects:b;hasWiki=has_wiki:b;homepage=homepage:s;id=node_id:s;isArchived=archived:b;'+
+  'isDisabled=disabled:b;isFork=fork:b;isPrivate=private:b;language=language:s;name=name:s;'+
+  'openIssuesCount=open_issues_count:n;pushedAt=pushed_at:s;size=size:n;stargazersCount=stargazers_count:n;'+
+  'updatedAt=updated_at:s;url=html_url:s;visibility=visibility:s;watchersCount=watchers_count:n';
+ SrIssueFields='assignees,author,authorAssociation,body,closedAt,commentsCount,createdAt,id,isLocked,isPullRequest,'+
+  'labels,number,repository,state,title,updatedAt,url';
+ SrIssueSpec='assignees=assignees:U;author=user:u;authorAssociation=author_association:s;body=body:s;closedAt=closed_at:N;'+
+  'commentsCount=comments:n;createdAt=created_at:s;id=node_id:s;isLocked=locked:b;labels=labels:L;number=number:n;'+
+  'state=state:s;title=title:s;updatedAt=updated_at:s;url=html_url:s';
+ SrCodeFields='path,repository,sha,textMatches,url';
+ SrCodeSpec='path=path:s;sha=sha:s;url=html_url:s';
+ SrCommitFields='author,commit,committer,id,parents,repository,sha,url';
+ SrCommitSpec='id=node_id:s;sha=sha:s;url=html_url:s';
+
+{ ajoute un qualificatif a une requete de recherche (guillemets si espaces) }
+Procedure QualAdd(Var Q_:AnsiString;Const Key,Val_:AnsiString);
+Begin
+ If Val_='' Then Exit;
+ If Q_<>'' Then Q_:=Q_+' ';
+ If Pos(' ',Val_)>0 Then Q_:=Q_+Key+':"'+Val_+'"' Else Q_:=Q_+Key+':'+Val_;
+End;
+
+{ qualificatif pour une option (repetable) }
+Procedure QualOpt(Var Q_:AnsiString;Const Opt_,Qual:AnsiString);
+Var
+ L:TSList;
+ I:LongInt;
+Begin
+ If not OptHas(Opt_)Then Exit;
+ OptCsv(Opt_,L);
+ For I:=0 to L.N-1 do QualAdd(Q_,Qual,L.A[I]);
+End;
+
+Procedure QualBool(Var Q_:AnsiString;Const Opt_,Qual:AnsiString);
+Begin
+ If OptHas(Opt_)Then QualAdd(Q_,Qual,'true');
+End;
+
+Function SearchHook(Node:LongInt;Const F:AnsiString;Var Out_:AnsiString):Boolean;
+Var
+ L:TSList;
+ R:LongInt;
+Begin
+ SearchHook:=True;
+ If F='owner' Then Begin
+  SClear(L);
+  FS(L,'id',JS(Node,'owner.node_id'));FS(L,'login',JS(Node,'owner.login'));FS(L,'type',JS(Node,'owner.type'));
+  FS(L,'url',JS(Node,'owner.html_url'));
+  Out_:=ObjOf(L);
+ End
+ Else If F='license' Then Begin
+  R:=JGet(Node,'license');
+  If(R<0)or(JP[R].Kind<>JK_OBJ)Then Out_:='null'
+  Else Out_:='{"key":'+JQ(JS(R,'key'))+',"name":'+JQ(JS(R,'name'))+',"url":'+JQ(JS(R,'url'))+'}';
+ End
+ Else If F='isPullRequest' Then Out_:=JBool(JGet(Node,'pull_request')>=0)
+ Else If F='repository' Then Begin
+  If JGet(Node,'repository_url')>=0 Then Begin
+   Out_:='{"name":'+JQ(BaseName(JS(Node,'repository_url')))+',"nameWithOwner":'+
+     JQ(Copy(JS(Node,'repository_url'),Pos('/repos/',JS(Node,'repository_url'))+7,200))+'}';
+  End
+  Else If JGet(Node,'repository')>=0 Then
+   Out_:='{"id":'+JQ(JS(Node,'repository.node_id'))+',"isFork":'+JBool(JB(Node,'repository.fork'))+',"isPrivate":'+
+     JBool(JB(Node,'repository.private'))+',"nameWithOwner":'+JQ(JS(Node,'repository.full_name'))+',"url":'+
+     JQ(JS(Node,'repository.html_url'))+'}'
+  Else Out_:='null';
+ End
+ Else If F='textMatches' Then Begin
+  SClear(L);
+  R:=JGet(Node,'text_matches');
+  If R>=0 Then Begin
+   R:=JP[R].First;
+   While R>=0 do Begin
+    SAdd(L,'{"fragment":'+JQ(JS(R,'fragment'))+',"matches":[],"property":'+JQ(JS(R,'property'))+',"type":'+JQ(JS(R,'object_type'))+'}');
+    R:=JP[R].Next;
+   End;
+  End;
+  Out_:='['+JoinList(L,',')+']';
+ End
+ Else If F='commit' Then Begin
+  Out_:='{"message":'+JQ(JS(Node,'commit.message'))+',"comment_count":'+IStr(JI(Node,'commit.comment_count'))+
+    ',"author":{"date":'+JQ(JS(Node,'commit.author.date'))+',"email":'+JQ(JS(Node,'commit.author.email'))+',"name":'+
+    JQ(JS(Node,'commit.author.name'))+'},"committer":{"date":'+JQ(JS(Node,'commit.committer.date'))+'}}';
+ End
+ Else If(F='author')and(JGet(Node,'commit')>=0)Then Out_:=UserJson(JGet(Node,'author'))
+ Else If F='committer' Then Out_:=UserJson(JGet(Node,'committer'))
+ Else If F='parents' Then Begin
+  SClear(L);
+  R:=JGet(Node,'parents');
+  If R>=0 Then Begin
+   R:=JP[R].First;
+   While R>=0 do Begin SAdd(L,'{"sha":'+JQ(JS(R,'sha'))+',"url":'+JQ(JS(R,'html_url'))+'}');R:=JP[R].Next;End;
+  End;
+  Out_:='['+JoinList(L,',')+']';
+ End
+ Else SearchHook:=False;
+End;
+
+{ execute une recherche : Kind = repositories|issues|code|commits ; Query deja assemblee }
+Procedure RunSearch(Const Kind,Q_:AnsiString;Limit:LongInt;Var L:TIList;Var Total:Int64;Const Extra,Accept:AnsiString);
+Var
+ R:THttpReq;
+ Url:AnsiString;
+ J,Arr,C:LongInt;
+ Per:LongInt;
+Begin
+ L.N:=0;SetLength(L.A,0);Total:=0;
+ Per:=100;If Limit<100 Then Per:=Limit;
+ Url:='/search/'+Kind+'?q='+UrlEnc(Q_,False)+'&per_page='+IStr(Per)+Extra;
+ While Url<>'' do Begin
+  RequireAuth;
+  ReqInit(R,'GET',ApiUrl(Url),TokenOf(ApiHost));
+  If Accept<>'' Then R.Headers:='Accept: '+Accept+#13#10;
+  HttpDo(R);
+  If not ApiOk(R)Then Die(ErrText(R));
+  J:=JParse(R.RespBody);
+  If J<0 Then Break;
+  Total:=JI(J,'total_count');
+  Arr:=JGet(J,'items');
+  If Arr>=0 Then Begin
+   C:=JP[Arr].First;
+   While C>=0 do Begin
+    IAdd(L,C);
+    If L.N>=Limit Then Exit;
+    C:=JP[C].Next;
+   End;
+  End;
+  Url:=LinkNext(R.RespHeaders);
+ End;
+End;
+
+Procedure SearchCommon(Const What:AnsiString);
+Begin
+ OptLimitN('Maximum number of '+What+' to fetch',30);
+ Opt('order','','string','Order of results returned, ignored unless ''--sort'' flag is specified: {asc|desc} (default "desc")@@Ordre des r'+#130+'sultats, ignor'+#130+' sans --sort : {asc|desc} (d'+#130+'faut "desc")');
+ OptWeb('Open the search query in the web browser@@Ouvre la recherche dans le navigateur');
+ OptJsonAll;
+End;
+
+Function SortParams:AnsiString;
+Begin
+ Result:='';
+ If OptHas('sort')Then Result:='&sort='+UrlEnc(OptGet('sort'),False)+'&order='+UrlEnc(OptGetDef('order','desc'),False);
+End;
+
+Procedure CmdSearchRepos;
+Var
+ Q_:AnsiString;
+ L:TIList;
+ T:Int64;
+ I,Lim:LongInt;
+ Words:TSList;
+Begin
+ CmdBegin('search repos','[<query>]');
+ Opt('archived','','','Filter based on the repository archived state {true|false}@@Filtre selon l'''+#130+'tat archiv'+#130+' du d'+#130+'p'+#147+'t');
+ Opt('created','','date','Filter based on created at date@@Filtre selon la date de cr'+#130+'ation');
+ Opt('followers','','number','Filter based on number of followers@@Filtre selon le nombre d''abonn'+#130+'s');
+ Opt('forks','','number','Filter on number of forks@@Filtre selon le nombre de forks');
+ Opt('good-first-issues','','number','Filter on number of issues with the ''good first issue'' label@@Filtre selon le nombre de tickets "good first issue"');
+ Opt('help-wanted-issues','','number','Filter on number of issues with the ''help wanted'' label@@Filtre selon le nombre de tickets "help wanted"');
+ Opt('include-forks','','string','Include forks in fetched repositories: {false|true|only}@@Inclut les forks : {false|true|only}');
+ Opt('language','','string','Filter based on the coding language@@Filtre selon le langage');
+ Opt('license','','*strings','Filter based on license type@@Filtre selon le type de licence');
+ Opt('match','','*strings','Restrict search to specific field of repository: {name|description|readme}@@Restreint la recherche '+#133+' un champ : {name|description|readme}');
+ Opt('number-topics','','number','Filter on number of topics@@Filtre selon le nombre de sujets');
+ Opt('owner','','*strings','Filter on owner@@Filtre selon le propri'+#130+'taire');
+ Opt('size','','string','Filter on a size range, in kilobytes@@Filtre selon la taille en kilooctets');
+ Opt('sort','','string','Sort fetched repositories: {forks|help-wanted-issues|stars|updated} (default "best-match")@@Trie les d'+#130+'p'+#147+'ts');
+ Opt('stars','','number','Filter on number of stars@@Filtre selon le nombre d'''+#130+'toiles');
+ Opt('topic','','*strings','Filter on topic@@Filtre selon le sujet');
+ Opt('updated','','date','Filter on last updated at date@@Filtre selon la date de derni'+#138+'re mise '+#133+' jour');
+ Opt('visibility','','*strings','Filter based on visibility: {public|private|internal}@@Filtre selon la visibilit'+#130+'');
+ SearchCommon('repositories');
+ CmdJson(SrRepoFields);
+ ParseArgs(ArgStart);
+ NeedArgs(0,-1);
+ JsonSetup(SrRepoFields);
+ InitHostOpt;
+ Q_:=JoinList(PosArgs,' ');
+ If OptHas('archived')Then QualAdd(Q_,'archived',IfThen_(OptGet('archived')='false','false','true'));
+ QualOpt(Q_,'created','created');QualOpt(Q_,'followers','followers');QualOpt(Q_,'forks','forks');
+ QualOpt(Q_,'good-first-issues','good-first-issues');QualOpt(Q_,'help-wanted-issues','help-wanted-issues');
+ If OptHas('include-forks')Then QualAdd(Q_,'fork',OptGet('include-forks'));
+ QualOpt(Q_,'language','language');QualOpt(Q_,'license','license');QualOpt(Q_,'match','in');
+ QualOpt(Q_,'number-topics','topics');QualOpt(Q_,'owner','user');QualOpt(Q_,'size','size');
+ QualOpt(Q_,'stars','stars');QualOpt(Q_,'topic','topic');QualOpt(Q_,'updated','pushed');
+ QualOpt(Q_,'visibility','is');
+ If OptHas('web')Then Begin OpenWeb(WebBaseOf(ApiHost)+'/search?q='+UrlEnc(Q_,False)+'&type=repositories');Exit;End;
+ If Q_='' Then Die2('specify search keywords or flags',1);
+ Lim:=OptInt('limit',30);
+ RunSearch('repositories',Q_,Lim,L,T,SortParams,'');
+ If UseJson Then Begin EmitItems(L,SrRepoSpec,@SearchHook);Exit;End;
+ If L.N=0 Then Begin WriteLn(StdErr,'No repositories matched your search');Halt(1);End;
+ ShowingLine(L.N,T,'repositories','');
+ TblBegin('');
+ For I:=0 to L.N-1 do
+  TblRow(JS(L.A[I],'full_name')+#9+JS(L.A[I],'description')+#9+IfThen_(JB(L.A[I],'archived'),LoStr(JS(L.A[I],'visibility'))+', archived',
+    IfThen_(JB(L.A[I],'fork'),LoStr(JS(L.A[I],'visibility'))+', fork',LoStr(JS(L.A[I],'visibility'))))+#9+TimeCell(JS(L.A[I],'updated_at')));
+ TblPrint;
+End;
+
+Procedure SearchIssues(IsPr:Boolean);
+Var
+ Q_:AnsiString;
+ L:TIList;
+ T:Int64;
+ I,Lim:LongInt;
+ Lbl,Rp:AnsiString;
+ Kind:AnsiString;
+Begin
+ If IsPr Then CmdBegin('search prs','[<query>]') Else CmdBegin('search issues','[<query>]');
+ Opt('app','','string','Filter by GitHub App author@@Filtre par application GitHub');
+ Opt('archived','','','Restrict search to archived repositories@@Restreint aux d'+#130+'p'+#147+'ts archiv'+#130+'s');
+ Opt('assignee','','string','Filter by assignee@@Filtre par personne assign'+#130+'e');
+ Opt('author','A','string','Filter by author@@Filtre par auteur');
+ If IsPr Then Opt('base','B','string','Filter on base branch name@@Filtre par branche de base');
+ Opt('closed','','date','Filter on closed at date@@Filtre selon la date de fermeture');
+ Opt('commenter','','string','Filter based on comments by user@@Filtre selon les commentaires d''un utilisateur');
+ Opt('comments','','number','Filter on number of comments@@Filtre selon le nombre de commentaires');
+ Opt('created','','date','Filter based on created at date@@Filtre selon la date de cr'+#130+'ation');
+ If IsPr Then Opt('draft','','','Filter based on draft state@@Filtre selon l'''+#130+'tat de brouillon');
+ If IsPr Then Opt('head','H','string','Filter on head branch name@@Filtre par branche source');
+ If not IsPr Then Opt('include-prs','','','Include pull requests in results@@Inclut les pull requests dans les r'+#130+'sultats');
+ Opt('interactions','','number','Filter on number of reactions and comments@@Filtre selon les r'+#130+'actions et commentaires');
+ Opt('involves','','string','Filter based on involvement of user@@Filtre selon l''implication d''un utilisateur');
+ Opt('label','','*strings','Filter on label@@Filtre par '+#130+'tiquette');
+ Opt('language','','string','Filter based on the coding language@@Filtre selon le langage');
+ Opt('locked','','','Filter on locked conversation status@@Filtre selon le verrouillage');
+ Opt('match','','*strings','Restrict search to specific field of issue: {title|body|comments}@@Restreint la recherche '+#133+' un champ');
+ Opt('mentions','','string','Filter based on user mentions@@Filtre selon les mentions');
+ Opt('milestone','','title','Filter by milestone title@@Filtre par titre de jalon');
+ If IsPr Then Opt('merged','','','Filter based on merged state@@Filtre selon l'''+#130+'tat fusionn'+#130+'');
+ If IsPr Then Opt('merged-at','','date','Filter on merged at date@@Filtre selon la date de fusion');
+ Opt('no-assignee','','','Filter on missing assignee@@Filtre les '+#130+'l'+#130+'ments sans personne assign'+#130+'e');
+ Opt('no-label','','','Filter on missing label@@Filtre les '+#130+'l'+#130+'ments sans '+#130+'tiquette');
+ Opt('no-milestone','','','Filter on missing milestone@@Filtre les '+#130+'l'+#130+'ments sans jalon');
+ Opt('no-project','','','Filter on missing project@@Filtre les '+#130+'l'+#130+'ments sans projet');
+ Opt('owner','','*strings','Filter on repository owner@@Filtre selon le propri'+#130+'taire du d'+#130+'p'+#147+'t');
+ Opt('project','','string','Filter on project board owner/number@@Filtre selon le tableau de projet');
+ Opt('reactions','','number','Filter on number of reactions@@Filtre selon le nombre de r'+#130+'actions');
+ Opt('repo','R','*strings','Filter on repository@@Filtre selon le d'+#130+'p'+#147+'t');
+ If IsPr Then Opt('review','','string','Filter based on review status: {none|required|approved|changes_requested}@@Filtre selon l'''+#130+'tat de la r'+#130+'vision');
+ If IsPr Then Opt('review-requested','','user','Filter on user or team requested to review@@Filtre selon la demande de r'+#130+'vision');
+ If IsPr Then Opt('reviewed-by','','user','Filter on user who reviewed@@Filtre selon le r'+#130+'viseur');
+ Opt('sort','','string','Sort fetched results: {comments|created|interactions|reactions|reactions-+1|reactions--1|reactions-heart|reactions-smile|reactions-tada|reactions-thinking_face|updated} (default "best-match")@@Trie les r'+#130+'sultats');
+ Opt('state','','string','Filter based on state: {open|closed}@@Filtre selon l'''+#130+'tat : {open|closed}');
+ Opt('team-mentions','','string','Filter based on team mentions@@Filtre selon les mentions d'''+#130+'quipe');
+ Opt('updated','','date','Filter on last updated at date@@Filtre selon la date de derni'+#138+'re mise '+#133+' jour');
+ Opt('visibility','','string','Filter based on repository visibility: {public|private|internal}@@Filtre selon la visibilit'+#130+' du d'+#130+'p'+#147+'t');
+ SearchCommon(IfThen_(IsPr,'pull requests','issues'));
+ CmdJson(SrIssueFields);
+ ParseArgs(ArgStart);
+ NeedArgs(0,-1);
+ JsonSetup(SrIssueFields);
+ InitHostOpt;
+ Q_:=JoinList(PosArgs,' ');
+ QualAdd(Q_,'is',IfThen_(IsPr,'pr','issue'));
+ If(not IsPr)and OptHas('include-prs')Then Begin
+  { retire is:issue }
+  Q_:=ReplaceAll(Q_,' is:issue','');Q_:=ReplaceAll(Q_,'is:issue ','');
+ End;
+ QualAdd(Q_,'author',ResolveMe(OptGet('author')));
+ If OptHas('app')Then QualAdd(Q_,'author','app/'+OptGet('app'));
+ QualAdd(Q_,'assignee',ResolveMe(OptGet('assignee')));
+ If IsPr Then Begin QualAdd(Q_,'base',OptGet('base'));QualAdd(Q_,'head',OptGet('head'));End;
+ QualOpt(Q_,'closed','closed');QualAdd(Q_,'commenter',OptGet('commenter'));QualAdd(Q_,'comments',OptGet('comments'));
+ QualOpt(Q_,'created','created');QualBool(Q_,'archived','archived');
+ If IsPr Then QualBool(Q_,'draft','draft');
+ QualAdd(Q_,'interactions',OptGet('interactions'));QualAdd(Q_,'involves',OptGet('involves'));
+ QualOpt(Q_,'label','label');QualAdd(Q_,'language',OptGet('language'));QualBool(Q_,'locked','is:locked');
+ If OptHas('locked')Then Begin Q_:=ReplaceAll(Q_,'is:locked:true','is:locked');End;
+ QualOpt(Q_,'match','in');QualAdd(Q_,'mentions',OptGet('mentions'));QualAdd(Q_,'milestone',OptGet('milestone'));
+ If IsPr Then Begin
+  If OptHas('merged')Then QualAdd(Q_,'is','merged');
+  QualAdd(Q_,'merged',OptGet('merged-at'));
+  QualAdd(Q_,'review',OptGet('review'));
+  QualAdd(Q_,'review-requested',ResolveMe(OptGet('review-requested')));
+  QualAdd(Q_,'reviewed-by',ResolveMe(OptGet('reviewed-by')));
+ End;
+ If OptHas('no-assignee')Then QualAdd(Q_,'no','assignee');
+ If OptHas('no-label')Then QualAdd(Q_,'no','label');
+ If OptHas('no-milestone')Then QualAdd(Q_,'no','milestone');
+ If OptHas('no-project')Then QualAdd(Q_,'no','project');
+ QualOpt(Q_,'owner','user');QualAdd(Q_,'project',OptGet('project'));QualAdd(Q_,'reactions',OptGet('reactions'));
+ QualOpt(Q_,'repo','repo');
+ QualAdd(Q_,'state',OptGet('state'));QualAdd(Q_,'team-mentions',OptGet('team-mentions'));
+ QualAdd(Q_,'updated',OptGet('updated'));QualAdd(Q_,'is',OptGet('visibility'));
+ Q_:=ReplaceAll(Q_,'is:locked:true','is:locked');
+ If OptHas('web')Then Begin OpenWeb(WebBaseOf(ApiHost)+'/search?q='+UrlEnc(Q_,False)+'&type='+IfThen_(IsPr,'pullrequests','issues'));Exit;End;
+ Lim:=OptInt('limit',30);
+ RunSearch('issues',Q_,Lim,L,T,SortParams,'');
+ If UseJson Then Begin EmitItems(L,SrIssueSpec,@SearchHook);Exit;End;
+ If L.N=0 Then Begin WriteLn(StdErr,'No ',IfThen_(IsPr,'pull requests','issues'),' matched your search');Halt(1);End;
+ ShowingLine(L.N,T,IfThen_(IsPr,'pull requests','issues'),'');
+ TblBegin('');
+ For I:=0 to L.N-1 do Begin
+  Rp:=JS(L.A[I],'repository_url');
+  Rp:=Copy(Rp,Pos('/repos/',Rp)+7,Length(Rp));
+  Lbl:=NamesOf(JGet(L.A[I],'labels'),'name');
+  If OutTTY Then
+   TblRow(JS(L.A[I],'state')+#9+Rp+'#'+IStr(JI(L.A[I],'number'))+#9+JS(L.A[I],'title')+#9+Lbl+#9+TimeCell(JS(L.A[I],'updated_at')))
+  Else
+   TblRow(Rp+#9+IStr(JI(L.A[I],'number'))+#9+JS(L.A[I],'state')+#9+JS(L.A[I],'title')+#9+Lbl+#9+JS(L.A[I],'created_at'));
+ End;
+ TblPrint;
+End;
+
+Procedure CmdSearchIssues;
+Begin
+ SearchIssues(False);
+End;
+
+Procedure CmdSearchPrs;
+Begin
+ SearchIssues(True);
+End;
+
+Procedure CmdSearchCode;
+Var
+ Q_:AnsiString;
+ L:TIList;
+ T:Int64;
+ I,J,Lim:LongInt;
+ M:LongInt;
+Begin
+ CmdBegin('search code','<query>');
+ Opt('extension','','string','Filter on file extension@@Filtre selon l''extension de fichier');
+ Opt('filename','','string','Filter on filename@@Filtre selon le nom de fichier');
+ Opt('language','','string','Filter results by language@@Filtre par langage');
+ Opt('match','','*strings','Restrict search to file contents or file path: {file|path}@@Restreint au contenu ou au chemin du fichier');
+ Opt('owner','','*strings','Filter on owner@@Filtre selon le propri'+#130+'taire');
+ Opt('repo','R','*strings','Filter on repository@@Filtre selon le d'+#130+'p'+#147+'t');
+ Opt('size','','string','Filter on size range, in kilobytes@@Filtre selon la taille en kilooctets');
+ SearchCommon('code results');
+ CmdJson(SrCodeFields);
+ ParseArgs(ArgStart);
+ NeedArgs(0,-1);
+ JsonSetup(SrCodeFields);
+ InitHostOpt;
+ Q_:=JoinList(PosArgs,' ');
+ QualAdd(Q_,'extension',OptGet('extension'));QualAdd(Q_,'filename',OptGet('filename'));
+ QualAdd(Q_,'language',OptGet('language'));QualOpt(Q_,'match','in');QualOpt(Q_,'owner','user');
+ QualOpt(Q_,'repo','repo');QualAdd(Q_,'size',OptGet('size'));
+ If OptHas('web')Then Begin OpenWeb(WebBaseOf(ApiHost)+'/search?q='+UrlEnc(Q_,False)+'&type=code');Exit;End;
+ If Q_='' Then Die2('specify search keywords or flags',1);
+ Lim:=OptInt('limit',30);
+ RunSearch('code',Q_,Lim,L,T,'','application/vnd.github.text-match+json');
+ If UseJson Then Begin EmitItems(L,SrCodeSpec,@SearchHook);Exit;End;
+ If L.N=0 Then Begin WriteLn(StdErr,'No code results matched your search');Halt(1);End;
+ ShowingLine(L.N,T,'code results','');
+ For I:=0 to L.N-1 do Begin
+  If OutTTY Then WriteLn(JS(L.A[I],'repository.full_name'),':',JS(L.A[I],'path'))
+  Else Begin
+   M:=JGet(L.A[I],'text_matches');
+   If(M>=0)and(JP[M].Cnt>0)Then Begin
+    M:=JP[M].First;
+    While M>=0 do Begin
+     WriteLn(JS(L.A[I],'repository.full_name'),':',JS(L.A[I],'path'),': ',ReplaceAll(JS(M,'fragment'),#10,' '));
+     M:=JP[M].Next;
+    End;
+   End
+   Else WriteLn(JS(L.A[I],'repository.full_name'),':',JS(L.A[I],'path'));
+  End;
+  If OutTTY Then Begin
+   M:=JGet(L.A[I],'text_matches');
+   If(M>=0)and(JP[M].Cnt>0)Then WriteLn('  ',ReplaceAll(JS(JP[M].First,'fragment'),#10,#10'  '));
+   WriteLn;
+  End;
+ End;
+End;
+
+Procedure CmdSearchCommits;
+Var
+ Q_:AnsiString;
+ L:TIList;
+ T:Int64;
+ I,Lim:LongInt;
+Begin
+ CmdBegin('search commits','[<query>]');
+ Opt('author','','string','Filter by author@@Filtre par auteur');
+ Opt('author-date','','date','Filter based on authored date@@Filtre selon la date de cr'+#130+'ation');
+ Opt('author-email','','string','Filter on author email@@Filtre selon le courriel de l''auteur');
+ Opt('author-name','','string','Filter on author name@@Filtre selon le nom de l''auteur');
+ Opt('committer','','string','Filter by committer@@Filtre par validateur');
+ Opt('committer-date','','date','Filter based on committed date@@Filtre selon la date du commit');
+ Opt('committer-email','','string','Filter on committer email@@Filtre selon le courriel du validateur');
+ Opt('committer-name','','string','Filter on committer name@@Filtre selon le nom du validateur');
+ Opt('hash','','string','Filter by commit hash@@Filtre par empreinte de commit');
+ Opt('merge','','','Filter on merge commits@@Filtre les commits de fusion');
+ Opt('owner','','*strings','Filter on repository owner@@Filtre selon le propri'+#130+'taire du d'+#130+'p'+#147+'t');
+ Opt('parent','','string','Filter by parent hash@@Filtre par empreinte du parent');
+ Opt('repo','R','*strings','Filter on repository@@Filtre selon le d'+#130+'p'+#147+'t');
+ Opt('sort','','string','Sort fetched commits: {author-date|committer-date} (default "best-match")@@Trie les commits');
+ Opt('tree','','string','Filter by tree hash@@Filtre par empreinte d''arbre');
+ Opt('visibility','','*strings','Filter based on repository visibility: {public|private|internal}@@Filtre selon la visibilit'+#130+' du d'+#130+'p'+#147+'t');
+ SearchCommon('commits');
+ CmdJson(SrCommitFields);
+ ParseArgs(ArgStart);
+ NeedArgs(0,-1);
+ JsonSetup(SrCommitFields);
+ InitHostOpt;
+ Q_:=JoinList(PosArgs,' ');
+ QualAdd(Q_,'author',OptGet('author'));QualAdd(Q_,'author-date',OptGet('author-date'));
+ QualAdd(Q_,'author-email',OptGet('author-email'));QualAdd(Q_,'author-name',OptGet('author-name'));
+ QualAdd(Q_,'committer',OptGet('committer'));QualAdd(Q_,'committer-date',OptGet('committer-date'));
+ QualAdd(Q_,'committer-email',OptGet('committer-email'));QualAdd(Q_,'committer-name',OptGet('committer-name'));
+ QualAdd(Q_,'hash',OptGet('hash'));QualBool(Q_,'merge','merge');QualOpt(Q_,'owner','user');
+ QualAdd(Q_,'parent',OptGet('parent'));QualOpt(Q_,'repo','repo');QualAdd(Q_,'tree',OptGet('tree'));
+ QualOpt(Q_,'visibility','is');
+ If OptHas('web')Then Begin OpenWeb(WebBaseOf(ApiHost)+'/search?q='+UrlEnc(Q_,False)+'&type=commits');Exit;End;
+ If Q_='' Then Die2('specify search keywords or flags',1);
+ Lim:=OptInt('limit',30);
+ RunSearch('commits',Q_,Lim,L,T,SortParams,'');
+ If UseJson Then Begin EmitItems(L,SrCommitSpec,@SearchHook);Exit;End;
+ If L.N=0 Then Begin WriteLn(StdErr,'No commits matched your search');Halt(1);End;
+ ShowingLine(L.N,T,'commits','');
+ TblBegin('');
+ For I:=0 to L.N-1 do
+  TblRow(JS(L.A[I],'repository.full_name')+#9+Copy(JS(L.A[I],'sha'),1,7)+#9+FirstLine(JS(L.A[I],'commit.message'))+#9+
+    JS(L.A[I],'commit.author.name')+#9+TimeCell(JS(L.A[I],'commit.author.date')));
+ TblPrint;
+End;
+
+{ ---------- ruleset ---------- }
+
+Procedure CmdRulesetList;
+Var
+ L:TIList;
+ I,Lim:LongInt;
+ Path:AnsiString;
+ Org:AnsiString;
+Begin
+ CmdBegin('ruleset list','');
+ CmdAlias('ls');
+ OptLimitN('Maximum number of rulesets to list',30);
+ Opt('org','o','string','List organization-wide rulesets for the provided organization@@Liste les ensembles de r'+#138+'gles de l''organisation');
+ OptRepo;
+ Opt('parents','p','','Whether to include rulesets configured at higher levels that also apply (default true)@@Inclut les ensembles de r'+#138+'gles de niveau sup'+#130+'rieur (d'+#130+'faut true)');
+ OptWeb('Open the list of rulesets in the web browser@@Ouvre la liste dans le navigateur');
+ ParseArgs(ArgStart);
+ NeedArgs(0,0);
+ Org:=OptGet('org');
+ If Org<>'' Then Begin
+  InitHostOpt;
+  Path:='/orgs/'+PathEnc(Org)+'/rulesets';
+ End
+ Else Begin NeedRepo;Path:=RepoApi('/rulesets?includes_parents=true');End;
+ If OptHas('web')Then Begin
+  OpenWeb(IfThen_(Org<>'',WebBaseOf(ApiHost)+'/organizations/'+Org+'/settings/rules',RepoWebUrl+'/rules'));Exit;
+ End;
+ Lim:=OptInt('limit',30);
+ ApiPagedQ(Path,Lim,'',L);
+ If L.N=0 Then Begin WriteLn(StdErr,'No rulesets found in ',IfThen_(Org<>'',Org,RepoFull));Halt(1);End;
+ If OutTTY Then TblBegin('ID'#9'NAME'#9'SOURCE'#9'STATUS'#9'RULES') Else TblBegin('');
+ For I:=0 to L.N-1 do
+  TblRow(IStr(JI(L.A[I],'id'))+#9+JS(L.A[I],'name')+#9+JS(L.A[I],'source')+' ('+JS(L.A[I],'source_type')+')'+#9+JS(L.A[I],'enforcement')+#9+
+    IStr(JI(L.A[I],'rules_count')));
+ TblPrint;
+End;
+
+Procedure CmdRulesetView;
+Var
+ Id:LongInt;
+ J,C:LongInt;
+ Path,Org:AnsiString;
+Begin
+ CmdBegin('ruleset view','[<ruleset-id>]');
+ Opt('org','o','string','Organization name if querying an organization ruleset@@Nom de l''organisation')  ;
+ OptRepo;
+ Opt('parents','p','','Whether to include rulesets configured at higher levels that also apply (default true)@@Inclut les ensembles de r'+#138+'gles de niveau sup'+#130+'rieur');
+ OptWeb('Open the ruleset in the web browser@@Ouvre l''ensemble de r'+#138+'gles dans le navigateur');
+ ParseArgs(ArgStart);
+ NeedArgs(0,1);
+ Org:=OptGet('org');
+ If Pos1(0)='' Then Die2('a ruleset ID must be provided when not running interactively',1);
+ Id:=ToInt(Pos1(0),0);
+ If Org<>'' Then Begin InitHostOpt;Path:='/orgs/'+PathEnc(Org)+'/rulesets/'+IStr(Id);End
+ Else Begin NeedRepo;Path:=RepoApi('/rulesets/'+IStr(Id));End;
+ J:=ApiJ('GET',Path,'');
+ If OptHas('web')Then Begin OpenWeb(JS(J,'_links.html.href'));Exit;End;
+ WriteLn;
+ WriteLn(JS(J,'name'));
+ WriteLn('ID: ',JI(J,'id'));
+ WriteLn('Source: ',JS(J,'source'),' (',JS(J,'source_type'),')');
+ WriteLn('Enforcement: ',JS(J,'enforcement'));
+ WriteLn;
+ WriteLn('Bypass List');
+ C:=JGet(J,'bypass_actors');
+ If(C<0)or(JP[C].Cnt=0)Then WriteLn('This ruleset cannot be bypassed') Else Begin
+  C:=JP[C].First;
+  While C>=0 do Begin WriteLn('- ',JS(C,'actor_type'),' (ID: ',JI(C,'actor_id'),') ',JS(C,'bypass_mode'));C:=JP[C].Next;End;
+ End;
+ WriteLn;
+ WriteLn('Conditions');
+ C:=JGet(J,'conditions');
+ If C>=0 Then Begin WriteLn(RawJson(C));End Else WriteLn('No conditions configured');
+ WriteLn;
+ WriteLn('Rules');
+ C:=JGet(J,'rules');
+ If(C<0)or(JP[C].Cnt=0)Then WriteLn('No rules configured') Else Begin
+  C:=JP[C].First;
+  While C>=0 do Begin WriteLn('- ',JS(C,'type'));C:=JP[C].Next;End;
+ End;
+End;
+
+Procedure CmdRulesetCheck;
+Var
+ Br:AnsiString;
+ L:TIList;
+ I:LongInt;
+Begin
+ CmdBegin('ruleset check','[<branch>]');
+ Opt('default','','','Check rules on default branch@@V'+#130+'rifie les r'+#138+'gles de la branche par d'+#130+'faut');
+ OptRepo;
+ OptWeb('Open the branch rules page in a web browser@@Ouvre la page des r'+#138+'gles de la branche dans le navigateur');
+ ParseArgs(ArgStart);
+ NeedArgs(0,1);
+ NeedRepo;
+ Br:=Pos1(0);
+ If OptHas('default')Then Br:=JS(ApiJ('GET',RepoApi(''),''),'default_branch');
+ If Br='' Then Br:=CurrentBranch;
+ If Br='' Then Die2('could not determine current branch',1);
+ If OptHas('web')Then Begin OpenWeb(RepoWebUrl+'/rules?ref='+UrlEnc('refs/heads/'+Br,False));Exit;End;
+ ApiPagedQ(RepoApi('/rules/branches/'+PathEnc(Br)),0,'',L);
+ If L.N=0 Then Begin WriteLn('No rules apply to branch ',Br,' in ',RepoFull);Exit;End;
+ WriteLn('', L.N, ' rules apply to branch ',Br,' in ',RepoFull,':');
+ WriteLn;
+ For I:=0 to L.N-1 do WriteLn('- ',JS(L.A[I],'type'),' (',JS(L.A[I],'ruleset_source_type'),': ',JS(L.A[I],'ruleset_source'),')');
+End;
+{ ------------------------------------------------------------------ }
+{ gh project (GitHub Projects v2, GraphQL)                            }
+{ ------------------------------------------------------------------ }
+
+Var
+ PjOwner:AnsiString;
+
+Procedure PjOwnerOpt;
+Begin
+ Opt('owner','','string','Login of the owner. Use "@me" for the current user.@@Identifiant du propri'+#130+'taire. Utilisez "@me" pour l''utilisateur courant.');
+End;
+
+Function PjUseViewer:Boolean;
+Begin
+ PjOwner:=OptGet('owner');
+ PjUseViewer:=(PjOwner='')or(PjOwner='@me');
+End;
+
+Function WithLogin(Const V:AnsiString):AnsiString;
+Begin
+ If(V='')or(V='{}')Then WithLogin:='{"login":'+JQ(PjOwner)+'}'
+ Else WithLogin:='{"login":'+JQ(PjOwner)+','+Copy(V,2,Length(V));
+End;
+
+{ execute une requete sur le proprietaire : Body est insere dans viewer{...} ou dans le proprietaire }
+Function PjQuery(Const Params,Body,VarsJson:AnsiString):LongInt;
+Var
+ D:LongInt;
+Begin
+ InitHostOpt;
+ If PjUseViewer Then Begin
+  D:=Gql('query('+Params+'){viewer{'+Body+'}}',VarsJson);
+  PjQuery:=JGet(D,'viewer');
+ End
+ Else Begin
+  D:=Gql('query($login:String!'+IfThen_(Params<>'',','+Params,'')+'){repositoryOwner(login:$login){... on ProjectV2Owner{'+Body+'}}}',
+    WithLogin(VarsJson));
+  PjQuery:=JGet(D,'repositoryOwner');
+  If PjQuery<0 Then Die('GraphQL: Could not resolve to a User or Organization with the login of '''+PjOwner+'''.');
+ End;
+End;
+
+Const
+ PjFields='id title shortDescription readme url closed public number owner{... on User{login} ... on Organization{login}}';
+
+Function PjVars(N:LongInt):AnsiString;
+Begin
+ PjVars:='{"n":'+IStr(N)+'}';
+End;
+
+Function PjFind(N:LongInt):LongInt;
+Var
+ O,P:LongInt;
+Begin
+ O:=PjQuery('$n:Int!','projectV2(number:$n){'+PjFields+'}',PjVars(N));
+ P:=JGet(O,'projectV2');
+ If(P<0)or(JP[P].Kind<>JK_OBJ)Then Die('GraphQL: Could not resolve to a ProjectV2 with the number '+IStr(N)+'.');
+ PjFind:=P;
+End;
+
+Function PjNumArg:LongInt;
+Begin
+ If Pos1(0)='' Then Begin
+  If InteractiveOk Then PjNumArg:=ToInt(AskLine('Project number',''),0)
+  Else Begin Die2('project number is required when not running interactively',1);PjNumArg:=0;End;
+ End
+ Else PjNumArg:=ToInt(Pos1(0),0);
+ If PjNumArg<=0 Then Die2('invalid project number: '+Pos1(0),1);
+End;
+
+Function PjOwnerId:AnsiString;
+Var
+ O:LongInt;
+Begin
+ O:=PjQuery('','id','{}');
+ PjOwnerId:=JS(O,'id');
+End;
+
+Procedure PjPrint(P:LongInt);
+Begin
+ WriteLn(JS(P,'url'));
+End;
+
+Procedure CmdProjectList;
+Var
+ O,L,C:LongInt;
+ Lim:LongInt;
+ Closed:Boolean;
+ Cnt:LongInt;
+Begin
+ CmdBegin('project list','');
+ Opt('closed','','','Include closed projects@@Inclut les projets ferm'+#130+'s');
+ OptLimitN('Maximum number of projects to fetch',30);
+ PjOwnerOpt;
+ OptWeb('Open projects list in the browser@@Ouvre la liste des projets dans le navigateur');
+ OptJsonAll;
+ CmdJson('projects,totalCount');
+ ParseArgs(ArgStart);
+ NeedArgs(0,0);
+ JsonSetup('projects,totalCount');
+ Lim:=OptInt('limit',30);
+ If OptHas('web')Then Begin
+  InitHostOpt;PjUseViewer;
+  OpenWeb(WebBaseOf(ApiHost)+IfThen_((PjOwner='')or(PjOwner='@me'),'/'+CurrentUser,'/users/'+PjOwner)+'/projects');Exit;
+ End;
+ O:=PjQuery('$n:Int!','projectsV2(first:$n){totalCount nodes{'+PjFields+'}}','{"n":'+IStr(Lim)+'}');
+ L:=JPath(O,'projectsV2.nodes');
+ If(L<0)or(JP[L].Cnt=0)Then Begin WriteLn(StdErr,'No projects found for ',IfThen_(PjUseViewer,'@me',PjOwner));Halt(0);End;
+ If UseJson Then Begin
+  Cnt:=JI(O,'projectsV2.totalCount');
+  EmitJson('{"projects":'+RawJson(L)+',"totalCount":'+IStr(Cnt)+'}');
+  Exit;
+ End;
+ TblBegin('NUMBER'#9'TITLE'#9'STATE'#9'ID');
+ C:=JP[L].First;
+ While C>=0 do Begin
+  If OptHas('closed')or not JB(C,'closed')Then
+   TblRow(IStr(JI(C,'number'))+#9+JS(C,'title')+#9+IfThen_(JB(C,'closed'),'closed','open')+#9+JS(C,'id'));
+  C:=JP[C].Next;
+ End;
+ TblPrint;
+End;
+
+Procedure CmdProjectView;
+Var
+ P:LongInt;
+Begin
+ CmdBegin('project view','[<number>]');
+ Opt('format','','string','Output format: {json}@@Format de sortie : {json}');
+ PjOwnerOpt;
+ OptWeb('Open a project in the browser@@Ouvre un projet dans le navigateur');
+ ParseArgs(ArgStart);
+ NeedArgs(0,1);
+ P:=PjFind(PjNumArg);
+ If OptHas('web')Then Begin OpenWeb(JS(P,'url'));Exit;End;
+ If OptGet('format')='json' Then Begin WriteLn(RawJson(P));Exit;End;
+ WriteLn(JS(P,'title'));
+ If JS(P,'shortDescription')<>'' Then WriteLn(JS(P,'shortDescription'));
+ WriteLn;
+ WriteLn('ID: ',JS(P,'id'));
+ WriteLn('Number: ',JI(P,'number'));
+ WriteLn('URL: ',JS(P,'url'));
+ WriteLn('Public: ',JBool(JB(P,'public')));
+ WriteLn('Closed: ',JBool(JB(P,'closed')));
+ If JS(P,'readme')<>'' Then Begin WriteLn;WriteLn(JS(P,'readme'));End;
+End;
+
+Procedure CmdProjectCreate;
+Var
+ D:LongInt;
+Begin
+ CmdBegin('project create','');
+ Opt('format','','string','Output format: {json}@@Format de sortie : {json}');
+ PjOwnerOpt;
+ Opt('title','','string','Title for the project@@Titre du projet');
+ ParseArgs(ArgStart);
+ NeedArgs(0,0);
+ MustFlag('title');
+ D:=Gql('mutation($o:ID!,$t:String!){createProjectV2(input:{ownerId:$o,title:$t}){projectV2{'+PjFields+'}}}',
+   '{"o":'+JQ(PjOwnerId)+',"t":'+JQ(OptGet('title'))+'}');
+ If OptGet('format')='json' Then WriteLn(RawJson(JPath(D,'createProjectV2.projectV2')))
+ Else PjPrint(JPath(D,'createProjectV2.projectV2'));
+End;
+
+Procedure CmdProjectEdit;
+Var
+ P,D:LongInt;
+ Inp:TSList;
+Begin
+ CmdBegin('project edit','[<number>]');
+ Opt('description','d','string','New description of the project@@Nouvelle description du projet');
+ Opt('format','','string','Output format: {json}@@Format de sortie : {json}');
+ PjOwnerOpt;
+ Opt('readme','','string','New readme for the project@@Nouveau readme du projet');
+ Opt('title','','string','New title for the project@@Nouveau titre du projet');
+ Opt('visibility','','string','Change project visibility: {PUBLIC|PRIVATE}@@Change la visibilit'+#130+' : {PUBLIC|PRIVATE}');
+ ParseArgs(ArgStart);
+ NeedArgs(0,1);
+ P:=PjFind(PjNumArg);
+ SClear(Inp);
+ FS(Inp,'projectId',JS(P,'id'));
+ If OptHas('title')Then FS(Inp,'title',OptGet('title'));
+ If OptHas('description')Then FS(Inp,'shortDescription',OptGet('description'));
+ If OptHas('readme')Then FS(Inp,'readme',OptGet('readme'));
+ If OptHas('visibility')Then FB(Inp,'public',UpStr(OptGet('visibility'))='PUBLIC');
+ If Inp.N=1 Then Die2('no changes specified; use --title, --description, --readme or --visibility',1);
+ D:=Gql('mutation($i:UpdateProjectV2Input!){updateProjectV2(input:$i){projectV2{'+PjFields+'}}}','{"i":'+ObjOf(Inp)+'}');
+ If OptGet('format')='json' Then WriteLn(RawJson(JPath(D,'updateProjectV2.projectV2')))
+ Else PjPrint(JPath(D,'updateProjectV2.projectV2'));
+End;
+
+Procedure CmdProjectClose;
+Var
+ P,D:LongInt;
+ Undo:Boolean;
+Begin
+ CmdBegin('project close','[<number>]');
+ Opt('format','','string','Output format: {json}@@Format de sortie : {json}');
+ PjOwnerOpt;
+ Opt('undo','','','Reopen a closed project@@Rouvre un projet ferm'+#130+'');
+ ParseArgs(ArgStart);
+ NeedArgs(0,1);
+ P:=PjFind(PjNumArg);
+ Undo:=OptHas('undo');
+ D:=Gql('mutation($p:ID!,$c:Boolean!){updateProjectV2(input:{projectId:$p,closed:$c}){projectV2{'+PjFields+'}}}',
+   '{"p":'+JQ(JS(P,'id'))+',"c":'+JBool(not Undo)+'}');
+ If OptGet('format')='json' Then WriteLn(RawJson(JPath(D,'updateProjectV2.projectV2')))
+ Else PjPrint(JPath(D,'updateProjectV2.projectV2'));
+End;
+
+Procedure CmdProjectDelete;
+Var
+ P,D:LongInt;
+Begin
+ CmdBegin('project delete','[<number>]');
+ Opt('format','','string','Output format: {json}@@Format de sortie : {json}');
+ PjOwnerOpt;
+ ParseArgs(ArgStart);
+ NeedArgs(0,1);
+ P:=PjFind(PjNumArg);
+ D:=Gql('mutation($p:ID!){deleteProjectV2(input:{projectId:$p}){projectV2{id}}}','{"p":'+JQ(JS(P,'id'))+'}');
+ If OptGet('format')<>'json' Then WriteLn(JS(P,'url'));
+End;
+
+Procedure CmdProjectCopy;
+Var
+ O,D,P:LongInt;
+ Src,Tgt:AnsiString;
+ TgtId:AnsiString;
+Begin
+ CmdBegin('project copy','[<number>]');
+ Opt('drafts','','','Include draft issues when copying@@Inclut les brouillons de tickets lors de la copie');
+ Opt('format','','string','Output format: {json}@@Format de sortie : {json}');
+ Opt('source-owner','','string','Login of the source owner. Use "@me" for the current user.@@Identifiant du propri'+#130+'taire source');
+ Opt('target-owner','','string','Login of the target owner. Use "@me" for the current user.@@Identifiant du propri'+#130+'taire cible');
+ Opt('title','','string','Title for the new project@@Titre du nouveau projet');
+ ParseArgs(ArgStart);
+ NeedArgs(0,1);
+ MustFlag('title');
+ PjOwner:=OptGet('source-owner');
+ InitHostOpt;
+ Src:=OptGet('source-owner');
+ If(Src='')or(Src='@me')Then O:=Gql('query($n:Int!){viewer{projectV2(number:$n){id}}}',PjVars(PjNumArg))
+ Else O:=Gql('query($l:String!,$n:Int!){repositoryOwner(login:$l){... on ProjectV2Owner{projectV2(number:$n){id}}}}','{"l":'+JQ(Src)+',"n":'+IStr(PjNumArg)+'}');
+ P:=JPath(O,'viewer.projectV2');
+ If P<0 Then P:=JPath(O,'repositoryOwner.projectV2');
+ If P<0 Then Die('GraphQL: Could not resolve to a ProjectV2');
+ Tgt:=OptGet('target-owner');
+ If(Tgt='')or(Tgt='@me')Then TgtId:=JS(Gql('query{viewer{id}}',''),'viewer.id')
+ Else TgtId:=JS(Gql('query($l:String!){repositoryOwner(login:$l){id}}','{"l":'+JQ(Tgt)+'}'),'repositoryOwner.id');
+ D:=Gql('mutation($p:ID!,$o:ID!,$t:String!,$d:Boolean){copyProjectV2(input:{projectId:$p,ownerId:$o,title:$t,includeDraftIssues:$d}){projectV2{'+PjFields+'}}}',
+   '{"p":'+JQ(JS(P,'id'))+',"o":'+JQ(TgtId)+',"t":'+JQ(OptGet('title'))+',"d":'+JBool(OptHas('drafts'))+'}');
+ If OptGet('format')='json' Then WriteLn(RawJson(JPath(D,'copyProjectV2.projectV2')))
+ Else PjPrint(JPath(D,'copyProjectV2.projectV2'));
+End;
+
+Procedure CmdProjectMarkTemplate;
+Var
+ P,D:LongInt;
+ Undo:Boolean;
+Begin
+ CmdBegin('project mark-template','[<number>]');
+ Opt('format','','string','Output format: {json}@@Format de sortie : {json}');
+ PjOwnerOpt;
+ Opt('undo','','','Unmark the project as a template.@@Retire le statut de mod'+#138+'le du projet.');
+ ParseArgs(ArgStart);
+ NeedArgs(0,1);
+ P:=PjFind(PjNumArg);
+ Undo:=OptHas('undo');
+ If Undo Then D:=Gql('mutation($p:ID!){unmarkProjectV2AsTemplate(input:{projectId:$p}){projectV2{id}}}','{"p":'+JQ(JS(P,'id'))+'}')
+ Else D:=Gql('mutation($p:ID!){markProjectV2AsTemplate(input:{projectId:$p}){projectV2{id}}}','{"p":'+JQ(JS(P,'id'))+'}');
+ PjPrint(P);
+End;
+
+Procedure CmdProjectFieldList;
+Var
+ P,O,F,C:LongInt;
+ Lim:LongInt;
+Begin
+ CmdBegin('project field-list','[<number>]');
+ Opt('format','','string','Output format: {json}@@Format de sortie : {json}');
+ OptLimitN('Maximum number of fields to fetch',30);
+ PjOwnerOpt;
+ ParseArgs(ArgStart);
+ NeedArgs(0,1);
+ Lim:=OptInt('limit',30);
+ P:=PjFind(PjNumArg);
+ O:=Gql('query($p:ID!,$n:Int!){node(id:$p){... on ProjectV2{fields(first:$n){totalCount nodes{... on ProjectV2FieldCommon{id name dataType} ... on ProjectV2SingleSelectField{options{id name}} ... on ProjectV2IterationField{id}}}}}}',
+   '{"p":'+JQ(JS(P,'id'))+',"n":'+IStr(Lim)+'}');
+ F:=JPath(O,'node.fields.nodes');
+ If OptGet('format')='json' Then Begin WriteLn(RawJson(F));Exit;End;
+ If(F<0)or(JP[F].Cnt=0)Then Begin WriteLn(StdErr,'Project ',PjNumArg,' for owner has no fields');Halt(1);End;
+ TblBegin('NAME'#9'DATA TYPE'#9'ID');
+ C:=JP[F].First;
+ While C>=0 do Begin
+  TblRow(JS(C,'name')+#9+JS(C,'dataType')+#9+JS(C,'id'));
+  C:=JP[C].Next;
+ End;
+ TblPrint;
+End;
+
+Procedure CmdProjectFieldCreate;
+Var
+ P,D:LongInt;
+ Dt:AnsiString;
+ Opts:TSList;
+ L:TSList;
+ I:LongInt;
+Begin
+ CmdBegin('project field-create','[<number>]');
+ Opt('data-type','','string','DataType of the new field.: {TEXT|SINGLE_SELECT|DATE|NUMBER}@@Type de donn'+#130+'es du nouveau champ : {TEXT|SINGLE_SELECT|DATE|NUMBER}');
+ Opt('format','','string','Output format: {json}@@Format de sortie : {json}');
+ Opt('name','','string','Name of the new field@@Nom du nouveau champ');
+ PjOwnerOpt;
+ Opt('single-select-options','','strings','Options for SINGLE_SELECT data type@@Options pour le type SINGLE_SELECT');
+ ParseArgs(ArgStart);
+ NeedArgs(0,1);
+ MustFlag('name');MustFlag('data-type');
+ P:=PjFind(PjNumArg);
+ Dt:=UpStr(OptGet('data-type'));
+ If Dt='SINGLE_SELECT' Then Begin
+  OptCsv('single-select-options',Opts);
+  If Opts.N=0 Then Die2('SINGLE_SELECT requires --single-select-options',1);
+  SClear(L);
+  For I:=0 to Opts.N-1 do SAdd(L,'{"name":'+JQ(Opts.A[I])+',"color":"GRAY","description":""}');
+  D:=Gql('mutation($p:ID!,$n:String!,$o:[ProjectV2SingleSelectFieldOptionInput!]){createProjectV2Field(input:{projectId:$p,dataType:SINGLE_SELECT,name:$n,singleSelectOptions:$o}){projectV2Field{... on ProjectV2SingleSelectField{id name dataType}}}}',
+    '{"p":'+JQ(JS(P,'id'))+',"n":'+JQ(OptGet('name'))+',"o":['+JoinList(L,',')+']}');
+ End
+ Else D:=Gql('mutation($p:ID!,$n:String!,$t:ProjectV2CustomFieldType!){createProjectV2Field(input:{projectId:$p,dataType:$t,name:$n}){projectV2Field{... on ProjectV2Field{id name dataType}}}}',
+   '{"p":'+JQ(JS(P,'id'))+',"n":'+JQ(OptGet('name'))+',"t":'+JQ(Dt)+'}');
+ If OptGet('format')='json' Then WriteLn(RawJson(JPath(D,'createProjectV2Field.projectV2Field')))
+ Else WriteLn(StdErr,#226#156#147' Created field ',OptGet('name'));
+End;
+
+Procedure CmdProjectFieldDelete;
+Begin
+ CmdBegin('project field-delete','');
+ Opt('format','','string','Output format: {json}@@Format de sortie : {json}');
+ Opt('id','','string','ID of the field to delete@@Identifiant du champ '+#133+' supprimer');
+ ParseArgs(ArgStart);
+ NeedArgs(0,0);
+ MustFlag('id');
+ InitHostOpt;
+ Gql('mutation($f:ID!){deleteProjectV2Field(input:{fieldId:$f}){projectV2Field{... on ProjectV2Field{id}}}}','{"f":'+JQ(OptGet('id'))+'}');
+ WriteLn(StdErr,#226#156#147' Deleted field ',OptGet('id'));
+End;
+
+Procedure CmdProjectItemList;
+Var
+ P,O,F,C:LongInt;
+ Lim:LongInt;
+ Ty,Title,Num,Repo:AnsiString;
+Begin
+ CmdBegin('project item-list','[<number>]');
+ Opt('format','','string','Output format: {json}@@Format de sortie : {json}');
+ OptLimitN('Maximum number of items to fetch',30);
+ PjOwnerOpt;
+ ParseArgs(ArgStart);
+ NeedArgs(0,1);
+ Lim:=OptInt('limit',30);
+ P:=PjFind(PjNumArg);
+ O:=Gql('query($p:ID!,$n:Int!){node(id:$p){... on ProjectV2{items(first:$n){totalCount nodes{id type content{... on Issue{title number repository{nameWithOwner}} ... on PullRequest{title number repository{nameWithOwner}} ... on DraftIssue{title body}}}}}}}',
+   '{"p":'+JQ(JS(P,'id'))+',"n":'+IStr(Lim)+'}');
+ F:=JPath(O,'node.items.nodes');
+ If OptGet('format')='json' Then Begin
+  WriteLn('{"items":',RawJson(F),',"totalCount":',JI(O,'node.items.totalCount'),'}');Exit;
+ End;
+ If(F<0)or(JP[F].Cnt=0)Then Begin WriteLn(StdErr,'Project ',PjNumArg,' for owner has no items');Halt(1);End;
+ TblBegin('TYPE'#9'TITLE'#9'NUMBER'#9'REPOSITORY'#9'ID');
+ C:=JP[F].First;
+ While C>=0 do Begin
+  Ty:=JS(C,'type');Title:=JS(C,'content.title');
+  Num:=IfThen_(JGet(JGet(C,'content'),'number')>=0,IStr(JI(C,'content.number')),'');
+  Repo:=JS(C,'content.repository.nameWithOwner');
+  TblRow(Ty+#9+Title+#9+Num+#9+Repo+#9+JS(C,'id'));
+  C:=JP[C].Next;
+ End;
+ TblPrint;
+End;
+
+Function ContentIdFromUrl(Const Url:AnsiString):AnsiString;
+Var
+ L:TSList;
+ D:LongInt;
+ N:LongInt;
+Begin
+ SplitStr(Url,'/',L);
+ If L.N<7 Then Die('invalid issue or pull request URL: '+Url);
+ N:=ToInt(L.A[6],0);
+ D:=Gql('query($o:String!,$r:String!,$n:Int!){repository(owner:$o,name:$r){issueOrPullRequest(number:$n){... on Issue{id} ... on PullRequest{id}}}}',
+   '{"o":'+JQ(L.A[3])+',"r":'+JQ(L.A[4])+',"n":'+IStr(N)+'}');
+ ContentIdFromUrl:=JS(D,'repository.issueOrPullRequest.id');
+ If ContentIdFromUrl='' Then Die('GraphQL: Could not resolve to an issue or pull request with the number of '+IStr(N));
+End;
+
+Procedure CmdProjectItemAdd;
+Var
+ P,D:LongInt;
+Begin
+ CmdBegin('project item-add','[<number>]');
+ Opt('format','','string','Output format: {json}@@Format de sortie : {json}');
+ PjOwnerOpt;
+ Opt('url','','string','URL of the issue or pull request to add to the project@@URL du ticket ou de la pull request '+#133+' ajouter');
+ ParseArgs(ArgStart);
+ NeedArgs(0,1);
+ MustFlag('url');
+ P:=PjFind(PjNumArg);
+ D:=Gql('mutation($p:ID!,$c:ID!){addProjectV2ItemById(input:{projectId:$p,contentId:$c}){item{id}}}',
+   '{"p":'+JQ(JS(P,'id'))+',"c":'+JQ(ContentIdFromUrl(OptGet('url')))+'}');
+ If OptGet('format')='json' Then WriteLn(RawJson(JPath(D,'addProjectV2ItemById.item')))
+ Else WriteLn(StdErr,#226#156#147' Added item ',JS(D,'addProjectV2ItemById.item.id'));
+End;
+
+Procedure CmdProjectItemCreate;
+Var
+ P,D:LongInt;
+Begin
+ CmdBegin('project item-create','[<number>]');
+ Opt('body','','string','Body for the draft issue@@Corps du brouillon de ticket');
+ Opt('format','','string','Output format: {json}@@Format de sortie : {json}');
+ PjOwnerOpt;
+ Opt('title','','string','Title for the draft issue@@Titre du brouillon de ticket');
+ ParseArgs(ArgStart);
+ NeedArgs(0,1);
+ MustFlag('title');
+ P:=PjFind(PjNumArg);
+ D:=Gql('mutation($p:ID!,$t:String!,$b:String){addProjectV2DraftIssue(input:{projectId:$p,title:$t,body:$b}){projectItem{id}}}',
+   '{"p":'+JQ(JS(P,'id'))+',"t":'+JQ(OptGet('title'))+',"b":'+IfThen_(OptHas('body'),JQ(OptGet('body')),'null')+'}');
+ If OptGet('format')='json' Then WriteLn(RawJson(JPath(D,'addProjectV2DraftIssue.projectItem')))
+ Else WriteLn(StdErr,#226#156#147' Created item ',JS(D,'addProjectV2DraftIssue.projectItem.id'));
+End;
+
+Procedure CmdProjectItemEdit;
+Var
+ Val_:AnsiString;
+ D:LongInt;
+Begin
+ CmdBegin('project item-edit','');
+ Opt('body','','string','Body of the draft issue item@@Corps du brouillon de ticket');
+ Opt('clear','','','Remove field value@@Retire la valeur du champ');
+ Opt('date','','string','Date value for the field (YYYY-MM-DD)@@Valeur de date du champ (AAAA-MM-JJ)');
+ Opt('field-id','','string','ID of the field to update@@Identifiant du champ '+#133+' modifier');
+ Opt('format','','string','Output format: {json}@@Format de sortie : {json}');
+ Opt('id','','string','ID of the item to edit@@Identifiant de l'''+#130+'l'+#130+'ment '+#133+' modifier');
+ Opt('iteration-id','','string','ID of the iteration value to set on the field@@Identifiant de l''it'+#130+'ration');
+ Opt('number','','float','Number value for the field@@Valeur num'+#130+'rique du champ');
+ Opt('project-id','','string','ID of the project to which the field belongs to@@Identifiant du projet');
+ Opt('single-select-option-id','','string','ID of the single select option value to set on the field@@Identifiant de l''option');
+ Opt('text','','string','Text value for the field@@Valeur texte du champ');
+ Opt('title','','string','Title of the draft issue item@@Titre du brouillon de ticket');
+ ParseArgs(ArgStart);
+ NeedArgs(0,0);
+ MustFlag('id');
+ InitHostOpt;
+ If OptHas('title')or OptHas('body')Then Begin
+  D:=Gql('mutation($i:ID!,$t:String,$b:String){updateProjectV2DraftIssue(input:{draftIssueId:$i,title:$t,body:$b}){draftIssue{id}}}',
+    '{"i":'+JQ(OptGet('id'))+',"t":'+IfThen_(OptHas('title'),JQ(OptGet('title')),'null')+',"b":'+IfThen_(OptHas('body'),JQ(OptGet('body')),'null')+'}');
+  WriteLn(StdErr,#226#156#147' Edited draft issue');
+  Exit;
+ End;
+ MustFlag('field-id');MustFlag('project-id');
+ If OptHas('clear')Then Begin
+  D:=Gql('mutation($p:ID!,$i:ID!,$f:ID!){clearProjectV2ItemFieldValue(input:{projectId:$p,itemId:$i,fieldId:$f}){projectV2Item{id}}}',
+    '{"p":'+JQ(OptGet('project-id'))+',"i":'+JQ(OptGet('id'))+',"f":'+JQ(OptGet('field-id'))+'}');
+  WriteLn(StdErr,#226#156#147' Cleared field value');
+  Exit;
+ End;
+ If OptHas('text')Then Val_:='{"text":'+JQ(OptGet('text'))+'}'
+ Else If OptHas('number')Then Val_:='{"number":'+OptGet('number')+'}'
+ Else If OptHas('date')Then Val_:='{"date":'+JQ(OptGet('date'))+'}'
+ Else If OptHas('single-select-option-id')Then Val_:='{"singleSelectOptionId":'+JQ(OptGet('single-select-option-id'))+'}'
+ Else If OptHas('iteration-id')Then Val_:='{"iterationId":'+JQ(OptGet('iteration-id'))+'}'
+ Else Begin Die2('SINGLE_SELECT, ITERATION, TEXT, NUMBER, or DATE value is required (or use --clear)',1);Val_:='';End;
+ D:=Gql('mutation($p:ID!,$i:ID!,$f:ID!,$v:ProjectV2FieldValue!){updateProjectV2ItemFieldValue(input:{projectId:$p,itemId:$i,fieldId:$f,value:$v}){projectV2Item{id}}}',
+   '{"p":'+JQ(OptGet('project-id'))+',"i":'+JQ(OptGet('id'))+',"f":'+JQ(OptGet('field-id'))+',"v":'+Val_+'}');
+ WriteLn(StdErr,#226#156#147' Edited item ',OptGet('id'));
+End;
+
+Procedure CmdProjectItemDelete;
+Var
+ P,D:LongInt;
+Begin
+ CmdBegin('project item-delete','[<number>]');
+ Opt('format','','string','Output format: {json}@@Format de sortie : {json}');
+ Opt('id','','string','ID of the item to delete@@Identifiant de l'''+#130+'l'+#130+'ment '+#133+' supprimer');
+ PjOwnerOpt;
+ ParseArgs(ArgStart);
+ NeedArgs(0,1);
+ MustFlag('id');
+ P:=PjFind(PjNumArg);
+ D:=Gql('mutation($p:ID!,$i:ID!){deleteProjectV2Item(input:{projectId:$p,itemId:$i}){deletedItemId}}',
+   '{"p":'+JQ(JS(P,'id'))+',"i":'+JQ(OptGet('id'))+'}');
+ WriteLn(StdErr,#226#156#147' Deleted item');
+End;
+
+Procedure CmdProjectItemArchive;
+Var
+ P,D:LongInt;
+Begin
+ CmdBegin('project item-archive','[<number>]');
+ Opt('format','','string','Output format: {json}@@Format de sortie : {json}');
+ Opt('id','','string','ID of the item to archive@@Identifiant de l'''+#130+'l'+#130+'ment '+#133+' archiver');
+ PjOwnerOpt;
+ Opt('undo','','','Unarchive an item@@D'+#130+'sarchive un '+#130+'l'+#130+'ment');
+ ParseArgs(ArgStart);
+ NeedArgs(0,1);
+ MustFlag('id');
+ P:=PjFind(PjNumArg);
+ If OptHas('undo')Then
+  D:=Gql('mutation($p:ID!,$i:ID!){unarchiveProjectV2Item(input:{projectId:$p,itemId:$i}){item{id}}}','{"p":'+JQ(JS(P,'id'))+',"i":'+JQ(OptGet('id'))+'}')
+ Else
+  D:=Gql('mutation($p:ID!,$i:ID!){archiveProjectV2Item(input:{projectId:$p,itemId:$i}){item{id}}}','{"p":'+JQ(JS(P,'id'))+',"i":'+JQ(OptGet('id'))+'}');
+ WriteLn(StdErr,#226#156#147' ',IfThen_(OptHas('undo'),'Unarchived','Archived'),' item');
+End;
+
+Procedure ProjectLink(Link:Boolean);
+Var
+ P,D:LongInt;
+ Rid,Tid:AnsiString;
+ H,O,N:AnsiString;
+ T:AnsiString;
+Begin
+ If Link Then CmdBegin('project link','[<number>] [flag]') Else CmdBegin('project unlink','[<number>] [flag]');
+ PjOwnerOpt;
+ OptRepo;
+ Opt('team','T','string','The team to be linked to this project@@L'''+#130+'quipe '+#133+' lier '+#133+' ce projet');
+ ParseArgs(ArgStart);
+ NeedArgs(0,1);
+ P:=PjFind(PjNumArg);
+ If OptHas('team')Then Begin
+  T:=OptGet('team');
+  If Pos('/',T)=0 Then Die2('team must be in the format ORG/TEAM-SLUG',1);
+  D:=Gql('query($o:String!,$s:String!){organization(login:$o){team(slug:$s){id}}}','{"o":'+JQ(Copy(T,1,Pos('/',T)-1))+',"s":'+JQ(Copy(T,Pos('/',T)+1,Length(T)))+'}');
+  Tid:=JS(D,'organization.team.id');
+  If Link Then Gql('mutation($p:ID!,$t:ID!){linkProjectV2ToTeam(input:{projectId:$p,teamId:$t}){team{id}}}','{"p":'+JQ(JS(P,'id'))+',"t":'+JQ(Tid)+'}')
+  Else Gql('mutation($p:ID!,$t:ID!){unlinkProjectV2FromTeam(input:{projectId:$p,teamId:$t}){team{id}}}','{"p":'+JQ(JS(P,'id'))+',"t":'+JQ(Tid)+'}');
+  WriteLn(StdErr,#226#156#147' ',IfThen_(Link,'Linked','Unlinked'),' team ',T);
+  Exit;
+ End;
+ NeedRepo;
+ D:=Gql('query($o:String!,$r:String!){repository(owner:$o,name:$r){id}}','{"o":'+JQ(RepoOwner)+',"r":'+JQ(RepoName)+'}');
+ Rid:=JS(D,'repository.id');
+ If Link Then Gql('mutation($p:ID!,$r:ID!){linkProjectV2ToRepository(input:{projectId:$p,repositoryId:$r}){repository{id}}}','{"p":'+JQ(JS(P,'id'))+',"r":'+JQ(Rid)+'}')
+ Else Gql('mutation($p:ID!,$r:ID!){unlinkProjectV2FromRepository(input:{projectId:$p,repositoryId:$r}){repository{id}}}','{"p":'+JQ(JS(P,'id'))+',"r":'+JQ(Rid)+'}');
+ WriteLn(StdErr,#226#156#147' ',IfThen_(Link,'Linked','Unlinked'),' ',RepoFull);
+End;
+
+Procedure CmdProjectLink;
+Begin
+ ProjectLink(True);
+End;
+
+Procedure CmdProjectUnlink;
+Begin
+ ProjectLink(False);
+End;
+{ ------------------------------------------------------------------ }
+{ gh codespace, gh extension                                          }
+{ ------------------------------------------------------------------ }
+
+Const
+ CsFields='displayName,environmentId,gitStatus,idleTimeoutMinutes,lastUsedAt,location,machineName,name,owner,'+
+  'prebuild,recentFolders,repository,state,vscsTarget';
+ CsSpec='displayName=display_name:s;environmentId=environment_id:s;idleTimeoutMinutes=idle_timeout_minutes:n;'+
+  'lastUsedAt=last_used_at:s;location=location:s;name=name:s;state=state:s;vscsTarget=vscs_target:s';
+
+Function CsHook(Node:LongInt;Const F:AnsiString;Var Out_:AnsiString):Boolean;
+Begin
+ CsHook:=True;
+ If F='gitStatus' Then
+  Out_:='{"ahead":'+IStr(JI(Node,'git_status.ahead'))+',"behind":'+IStr(JI(Node,'git_status.behind'))+',"hasUncommittedChanges":'+
+    JBool(JB(Node,'git_status.has_uncommitted_changes'))+',"hasUnpushedChanges":'+JBool(JB(Node,'git_status.has_unpushed_changes'))+
+    ',"ref":'+JQ(JS(Node,'git_status.ref'))+'}'
+ Else If F='machineName' Then Out_:=JQ(JS(Node,'machine.name'))
+ Else If F='owner' Then Out_:=UserJson(JGet(Node,'owner'))
+ Else If F='repository' Then Out_:='{"fullName":'+JQ(JS(Node,'repository.full_name'))+',"name":'+JQ(JS(Node,'repository.name'))+'}'
+ Else If F='prebuild' Then Out_:=JBool(JB(Node,'prebuild'))
+ Else If F='recentFolders' Then Begin
+  Out_:=RawJson(JGet(Node,'recent_folders'));
+  If Out_='null' Then Out_:='[]';
+ End
+ Else CsHook:=False;
+End;
+
+Function CsPath(Const Nm:AnsiString):AnsiString;
+Begin
+ CsPath:='/user/codespaces/'+PathEnc(Nm);
+End;
+
+{ duree "10m", "1h", "2d" en minutes }
+Function DurationMinutes(Const S:AnsiString):LongInt;
+Var
+ N:LongInt;
+ U:Char;
+Begin
+ If S='' Then Begin DurationMinutes:=0;Exit;End;
+ U:=S[Length(S)];
+ If U in['0'..'9']Then Begin DurationMinutes:=ToInt(S,0);Exit;End;
+ N:=ToInt(Copy(S,1,Length(S)-1),0);
+ Case U of
+  'h':DurationMinutes:=N*60;
+  'd':DurationMinutes:=N*1440;
+  's':DurationMinutes:=N div 60;
+  Else DurationMinutes:=N;
+ End;
+End;
+
+{ nom du codespace : --codespace ou choix dans la liste }
+Function CsName:AnsiString;
+Var
+ L:TIList;
+ I:LongInt;
+ T:Int64;
+ S:AnsiString;
+Begin
+ S:=OptGet('codespace');
+ If S<>'' Then Begin CsName:=S;Exit;End;
+ InitHostOpt;
+ ApiPaged('/user/codespaces',0,'codespaces',L,T);
+ If L.N=0 Then Die('you have no codespaces meeting the failed-to-find criteria');
+ If L.N=1 Then Begin CsName:=JS(L.A[0],'name');Exit;End;
+ If not InteractiveOk Then Die2('--codespace is required when not running interactively',1);
+ For I:=0 to L.N-1 do WriteLn(StdErr,I+1,'. ',JS(L.A[I],'display_name'),' (',JS(L.A[I],'repository.full_name'),') ',JS(L.A[I],'state'));
+ Write(StdErr,'> ');
+ I:=ToInt(TrimStr(ReadLine_),1)-1;
+ If(I<0)or(I>=L.N)Then I:=0;
+ CsName:=JS(L.A[I],'name');
+End;
+
+Procedure CmdCodespaceList;
+Var
+ L:TIList;
+ T:Int64;
+ I,Lim:LongInt;
+ Path:AnsiString;
+Begin
+ CmdBegin('codespace list','');
+ CmdAlias('ls');
+ OptLimitN('Maximum number of codespaces to list',30);
+ Opt('org','o','login','List codespaces for an organization (admin-only)@@Liste les codespaces d''une organisation');
+ Opt('repo','r','string','Repository name with owner: user/repo@@D'+#130+'p'+#147+'t au format propri'+#130+'taire/nom');
+ Opt('user','u','string','The username to list codespaces for (used with --org)@@L''utilisateur dont lister les codespaces (avec --org)');
+ OptJsonAll;
+ CmdJson(CsFields);
+ ParseArgs(ArgStart);
+ NeedArgs(0,0);
+ JsonSetup(CsFields);
+ InitHostOpt;
+ Lim:=OptInt('limit',30);
+ If OptHas('repo')Then Path:='/repos/'+OptGet('repo')+'/codespaces'
+ Else If OptHas('org')Then Path:='/orgs/'+PathEnc(OptGet('org'))+'/codespaces'
+ Else Path:='/user/codespaces';
+ ApiPaged(Path,Lim,'codespaces',L,T);
+ If UseJson Then Begin EmitItems(L,CsSpec,@CsHook);Exit;End;
+ If L.N=0 Then Begin WriteLn(StdErr,'You don''t have any codespaces.');Halt(1);End;
+ If OutTTY Then TblBegin('NAME'#9'DISPLAY NAME'#9'REPOSITORY'#9'BRANCH'#9'STATE'#9'CREATED AT') Else TblBegin('');
+ For I:=0 to L.N-1 do
+  TblRow(JS(L.A[I],'name')+#9+JS(L.A[I],'display_name')+#9+JS(L.A[I],'repository.full_name')+#9+JS(L.A[I],'git_status.ref')+#9+
+    JS(L.A[I],'state')+#9+TimeCell(JS(L.A[I],'created_at')));
+ TblPrint;
+End;
+
+Procedure CmdCodespaceCreate;
+Var
+ F:TSList;
+ J:LongInt;
+ Repo,Br:AnsiString;
+ Machines:LongInt;
+Begin
+ CmdBegin('codespace create','');
+ Opt('branch','b','string','Repository branch@@Branche du d'+#130+'p'+#147+'t');
+ Opt('default-permissions','','','Do not prompt to accept additional permissions requested by the codespace@@Ne demande pas d''accepter les permissions suppl'+#130+'mentaires');
+ Opt('devcontainer-path','d','string','Path to the devcontainer.json file to use when creating codespace@@Chemin du fichier devcontainer.json');
+ Opt('display-name','','string','Display name for the codespace (48 characters or less)@@Nom d''affichage du codespace');
+ Opt('idle-timeout','','duration','Allowed inactivity before codespace is stopped, e.g. "10m", "1h"@@Inactivit'+#130+' permise avant l''arr'+#136+'t du codespace');
+ Opt('location','l','string','Location: {EastUs|SouthEastAsia|WestEurope|WestUs2} (determined automatically if not provided)@@R'+#130+'gion du codespace');
+ Opt('machine','m','string','Hardware specifications for the VM@@Sp'+#130+'cifications mat'+#130+'rielles de la machine virtuelle');
+ Opt('repo','R','string','Repository name with owner: user/repo@@D'+#130+'p'+#147+'t au format propri'+#130+'taire/nom');
+ Opt('retention-period','','duration','Allowed time after shutting down before the codespace is automatically deleted (maximum 30 days), e.g. "1h", "72h"@@D'+#130+'lai avant suppression automatique');
+ Opt('status','s','','Show status of post-create command and dotfiles@@Affiche l'''+#130+'tat des commandes post-cr'+#130+'ation');
+ ParseArgs(ArgStart);
+ NeedArgs(0,0);
+ InitHostOpt;
+ Repo:=OptGet('repo');
+ If Repo='' Then Begin
+  If ResolveRepo(False)Then Repo:=RepoFull Else Die2('repository is required (use -R OWNER/REPO)',1);
+ End;
+ SClear(F);
+ Br:=OptGet('branch');
+ If Br<>'' Then FS(F,'ref',Br);
+ If OptHas('machine')Then FS(F,'machine',OptGet('machine'));
+ If OptHas('devcontainer-path')Then FS(F,'devcontainer_path',OptGet('devcontainer-path'));
+ If OptHas('display-name')Then FS(F,'display_name',OptGet('display-name'));
+ If OptHas('location')Then FS(F,'location',OptGet('location'));
+ If OptHas('idle-timeout')Then FN(F,'idle_timeout_minutes',DurationMinutes(OptGet('idle-timeout')));
+ If OptHas('retention-period')Then FN(F,'retention_period_minutes',DurationMinutes(OptGet('retention-period')));
+ J:=ApiJ('POST','/repos/'+Repo+'/codespaces',ObjOf(F));
+ WriteLn(JS(J,'name'));
+End;
+
+Procedure CmdCodespaceDelete;
+Var
+ L:TIList;
+ T:Int64;
+ I,Cnt:LongInt;
+ Days:LongInt;
+ Cutoff:Int64;
+ Del:Boolean;
+Begin
+ CmdBegin('codespace delete','');
+ Opt('all','','','Delete all codespaces@@Supprime tous les codespaces');
+ Opt('codespace','c','string','Name of the codespace@@Nom du codespace');
+ Opt('days','','N','Delete codespaces older than N days@@Supprime les codespaces de plus de N jours');
+ Opt('force','f','','Skip confirmation for codespaces that contain unsaved changes@@Ignore la confirmation pour les codespaces contenant des changements non enregistr'+#130+'s');
+ Opt('org','o','login','The login handle of the organization (admin-only)@@L''identifiant de l''organisation');
+ Opt('repo','r','string','Delete codespaces for a repository@@Supprime les codespaces d''un d'+#130+'p'+#147+'t');
+ Opt('user','u','string','The username to delete codespaces for (used with --org)@@L''utilisateur dont supprimer les codespaces (avec --org)');
+ ParseArgs(ArgStart);
+ NeedArgs(0,0);
+ InitHostOpt;
+ Cnt:=0;
+ If OptHas('all')or OptHas('repo')or OptHas('days')Then Begin
+  ApiPaged('/user/codespaces',0,'codespaces',L,T);
+  Days:=OptInt('days',0);
+  Cutoff:=NowEpoch-Int64(Days)*86400;
+  For I:=0 to L.N-1 do Begin
+   Del:=True;
+   If OptHas('repo')and(JS(L.A[I],'repository.full_name')<>OptGet('repo'))Then Del:=False;
+   If OptHas('days')and(IsoToEpoch(JS(L.A[I],'last_used_at'))>Cutoff)Then Del:=False;
+   If Del Then Begin
+    ApiJ('DELETE',CsPath(JS(L.A[I],'name')),'');
+    Inc(Cnt);
+   End;
+  End;
+  WriteLn(StdErr,Cnt,' codespace(s) deleted');
+  Exit;
+ End;
+ ApiJ('DELETE',CsPath(CsName),'');
+ WriteLn(StdErr,#226#156#147' Codespace deleted');
+End;
+
+Procedure CmdCodespaceStop;
+Var
+ Nm:AnsiString;
+Begin
+ CmdBegin('codespace stop','');
+ Opt('codespace','c','string','Name of the codespace@@Nom du codespace');
+ Opt('org','o','login','The login handle of the organization (admin-only)@@L''identifiant de l''organisation');
+ Opt('user','u','username','The username to stop codespace for (used with --org)@@L''utilisateur dont arr'+#136+'ter le codespace');
+ ParseArgs(ArgStart);
+ NeedArgs(0,0);
+ InitHostOpt;
+ Nm:=CsName;
+ ApiJ('POST',CsPath(Nm)+'/stop','');
+ WriteLn(StdErr,#226#156#147' Codespace ',Nm,' stopped');
+End;
+
+Procedure CmdCodespaceView;
+Var
+ J:LongInt;
+Begin
+ CmdBegin('codespace view','');
+ Opt('codespace','c','string','Name of the codespace@@Nom du codespace');
+ OptJsonAll;
+ CmdJson(CsFields);
+ Opt('repo','R','string','Filter codespace selection by repository name (user/repo)@@Filtre par d'+#130+'p'+#147+'t');
+ ParseArgs(ArgStart);
+ NeedArgs(0,0);
+ JsonSetup(CsFields);
+ InitHostOpt;
+ J:=ApiJ('GET',CsPath(CsName),'');
+ If UseJson Then Begin EmitItem(J,CsSpec,@CsHook);Exit;End;
+ WriteLn('Name'#9,JS(J,'name'));
+ WriteLn('State'#9,JS(J,'state'));
+ WriteLn('Repository'#9,JS(J,'repository.full_name'));
+ WriteLn('Git Status'#9,JS(J,'git_status.ref'));
+ WriteLn('Devcontainer Path'#9,JS(J,'devcontainer_path'));
+ WriteLn('Machine Display Name'#9,JS(J,'machine.display_name'));
+ WriteLn('Idle Timeout'#9,JI(J,'idle_timeout_minutes'),' minutes');
+ WriteLn('Created At'#9,JS(J,'created_at'));
+ WriteLn('Retention Period'#9,JI(J,'retention_period_minutes'),' minutes');
+End;
+
+Procedure CmdCodespaceEdit;
+Var
+ F:TSList;
+ Nm:AnsiString;
+ J:LongInt;
+Begin
+ CmdBegin('codespace edit','');
+ Opt('codespace','c','string','Name of the codespace@@Nom du codespace');
+ Opt('display-name','d','string','Set the display name@@D'+#130+'finit le nom d''affichage');
+ Opt('machine','m','string','Set hardware specifications for the VM@@D'+#130+'finit les sp'+#130+'cifications mat'+#130+'rielles');
+ Opt('repo','r','string','Filter codespace selection by repository name (user/repo)@@Filtre par d'+#130+'p'+#147+'t');
+ ParseArgs(ArgStart);
+ NeedArgs(0,0);
+ InitHostOpt;
+ SClear(F);
+ If OptHas('display-name')Then FS(F,'display_name',OptGet('display-name'));
+ If OptHas('machine')Then FS(F,'machine',OptGet('machine'));
+ If F.N=0 Then Die2('nothing to edit',1);
+ Nm:=CsName;
+ J:=ApiJ('PATCH',CsPath(Nm),ObjOf(F));
+ WriteLn(JS(J,'name'));
+End;
+
+Procedure CmdCodespaceRebuild;
+Begin
+ CmdBegin('codespace rebuild','');
+ Opt('codespace','c','string','Name of the codespace@@Nom du codespace');
+ Opt('full','','','Perform a full rebuild@@Effectue une reconstruction compl'+#138+'te');
+ ParseArgs(ArgStart);
+ Die2('gh codespace rebuild uses the Codespaces tunnel protocol, which is not supported by this clone',1);
+End;
+
+Procedure CmdCodespacePorts;
+Begin
+ CmdBegin('codespace ports','');
+ Opt('codespace','c','string','Name of the codespace@@Nom du codespace');
+ OptJsonAll;
+ ParseArgs(ArgStart);
+ Die2('gh codespace ports uses the Codespaces tunnel protocol, which is not supported by this clone',1);
+End;
+
+Procedure CmdCodespaceSsh;
+Var
+ Nm,Ip:AnsiString;
+ J:LongInt;
+Begin
+ CmdBegin('codespace ssh','[<flags>...] [-- <ssh-flags>...] [<command>]');
+ Opt('codespace','c','string','Name of the codespace@@Nom du codespace');
+ Opt('config','','','Write OpenSSH configuration to stdout@@'+#144+'crit la configuration OpenSSH sur la sortie standard');
+ ParseArgs(ArgStart);
+ Die2('gh codespace ssh uses the Codespaces tunnel protocol, which is not supported by this clone',1);
+End;
+
+Procedure CmdCodespaceCode;
+Var
+ Nm:AnsiString;
+Begin
+ CmdBegin('codespace code','');
+ Opt('codespace','c','string','Name of the codespace@@Nom du codespace');
+ Opt('insiders','','','Use the insiders version of Visual Studio Code@@Utilise la version Insiders de Visual Studio Code');
+ OptWeb('Use the web version of Visual Studio Code@@Utilise la version web de Visual Studio Code');
+ ParseArgs(ArgStart);
+ InitHostOpt;
+ Nm:=CsName;
+ If OptHas('web')Then OpenWeb('https://'+Nm+'.github.dev/')
+ Else Die2('opening Visual Studio Code requires the remote extension; use --web',1);
+End;
+
+Procedure CmdCodespaceCp;
+Begin
+ CmdBegin('codespace cp','[-e] [-r] [-- [<scp flags>...]] <sources>... <dest>');
+ Opt('codespace','c','string','Name of the codespace@@Nom du codespace');
+ Opt('expand','e','','Expand remote file names on remote shell@@D'+#130+'veloppe les noms de fichiers distants');
+ Opt('recursive','r','','Recursively copy directories@@Copie les r'+#130+'pertoires r'+#130+'cursivement');
+ ParseArgs(ArgStart);
+ Die2('gh codespace cp uses the Codespaces tunnel protocol, which is not supported by this clone',1);
+End;
+
+Procedure CmdCodespaceLogs;
+Begin
+ CmdBegin('codespace logs','');
+ Opt('codespace','c','string','Name of the codespace@@Nom du codespace');
+ Opt('follow','f','','Tail and follow the logs@@Suit les journaux');
+ ParseArgs(ArgStart);
+ Die2('gh codespace logs uses the Codespaces tunnel protocol, which is not supported by this clone',1);
+End;
+
+Procedure CmdCodespaceJupyter;
+Begin
+ CmdBegin('codespace jupyter','');
+ Opt('codespace','c','string','Name of the codespace@@Nom du codespace');
+ ParseArgs(ArgStart);
+ Die2('gh codespace jupyter uses the Codespaces tunnel protocol, which is not supported by this clone',1);
+End;
+
+{ ---------- extensions ---------- }
+
+{ extension installee : gh-NOM dans le repertoire des extensions }
+Function ExtensionPath(Const Nm:AnsiString):AnsiString;
+Var
+ D,P:AnsiString;
+Begin
+ D:=JoinPath(JoinPath(DataDir,'extensions'),'gh-'+Nm);
+ P:=JoinPath(D,'gh-'+Nm);
+ {$IFDEF WINDOWS}
+ If FileExists_(P+'.exe')Then Begin ExtensionPath:=P+'.exe';Exit;End;
+ {$ENDIF}
+ If FileExists_(P)Then ExtensionPath:=P Else ExtensionPath:='';
+End;
+
+Function ExtDir:AnsiString;
+Begin
+ ExtDir:=JoinPath(DataDir,'extensions');
+End;
+
+Function ExtNameOf(Const S:AnsiString):AnsiString;
+Var
+ T:AnsiString;
+Begin
+ T:=S;
+ If StartsWith(T,'gh-')Then T:=Copy(T,4,Length(T));
+ ExtNameOf:=T;
+End;
+
+Procedure ListExtensions(Var Names:TSList);
+Var
+ E:TEntries;
+ I:LongInt;
+Begin
+ SClear(Names);
+ ListDir(ExtDir,E);
+ For I:=0 to High(E)do If E[I].IsDir and StartsWith(E[I].Name,'gh-')Then SAdd(Names,E[I].Name);
+ SSort(Names);
+End;
+
+Function ExtRepoOf(Const Dir:AnsiString):AnsiString;
+Var
+ Y:TYaml;
+ Url:AnsiString;
+ H,O,N:AnsiString;
+Begin
+ YamlLoad(JoinPath(Dir,'manifest.yml'),Y);
+ If YGet(Y,'owner')<>'' Then ExtRepoOf:=YGet(Y,'owner')+'/'+YGet(Y,'name')
+ Else Begin
+  Url:=GitOut('-C '+Q(Dir)+' config --get remote.origin.url');
+  If(Url<>'')and ParseRepoRef(Url,H,O,N)Then ExtRepoOf:=O+'/'+N Else ExtRepoOf:='';
+ End;
+End;
+
+Procedure CmdExtList;
+Var
+ Names:TSList;
+ I:LongInt;
+ Y:TYaml;
+ Dir:AnsiString;
+Begin
+ CmdBegin('extension list','');
+ CmdAlias('ls');
+ ParseArgs(ArgStart);
+ NeedArgs(0,0);
+ ListExtensions(Names);
+ If Names.N=0 Then Begin WriteLn(StdErr,'No installed extensions found');Halt(1);End;
+ TblBegin('NAME'#9'REPO'#9'VERSION');
+ For I:=0 to Names.N-1 do Begin
+  Dir:=JoinPath(ExtDir,Names.A[I]);
+  YamlLoad(JoinPath(Dir,'manifest.yml'),Y);
+  TblRow('gh '+ExtNameOf(Names.A[I])+#9+ExtRepoOf(Dir)+#9+YGet(Y,'tag'));
+ End;
+ TblPrint;
+End;
+
+Function PlatformSuffix:AnsiString;
+Begin
+ {$IFDEF WINDOWS}
+ {$IFDEF CPU64}
+ PlatformSuffix:='windows-amd64';
+ {$ELSE}
+ PlatformSuffix:='windows-386';
+ {$ENDIF}
+ {$ELSE}
+ {$IFDEF CPU64}
+ PlatformSuffix:='linux-amd64';
+ {$ELSE}
+ PlatformSuffix:='linux-386';
+ {$ENDIF}
+ {$ENDIF}
+End;
+
+Function StringReplace_(Const S,A,B:AnsiString):AnsiString;
+Begin
+ StringReplace_:=ReplaceAll(S,A,B);
+End;
+
+{ installe une extension depuis un depot ; Pin = etiquette ou '' }
+Function InstallExt(Const Spec,Pin:AnsiString;Force:Boolean):Boolean;
+Var
+ H,O,N:AnsiString;
+ Dir,Bin,Suffix,Url,Tag:AnsiString;
+ Rl,A,C:LongInt;
+ R:THttpReq;
+ Y:TYaml;
+ Found:Boolean;
+ Nm:AnsiString;
+Begin
+ InstallExt:=False;
+ If not ParseRepoRef(Spec,H,O,N)Then Die('expected the "[HOST/]OWNER/REPO" format, got "'+Spec+'"');
+ If not StartsWith(N,'gh-')Then Die('extension repository name must start with `gh-`');
+ If H='' Then H:=DefaultHost;
+ ApiHost:=H;
+ Dir:=JoinPath(ExtDir,N);
+ If DirExists_(Dir)Then Begin
+  If not Force Then Die('there is already an installed extension that provides the "'+ExtNameOf(N)+'" command');
+  RmTree(Dir);
+ End;
+ MkDirs(Dir);
+ Found:=False;Tag:='';
+ If Pin<>'' Then ApiCall(R,'GET','/repos/'+O+'/'+N+'/releases/tags/'+PathEnc(Pin),'')
+ Else ApiCall(R,'GET','/repos/'+O+'/'+N+'/releases/latest','');
+ If ApiOk(R)Then Begin
+  Rl:=JParse(R.RespBody);
+  Tag:=JS(Rl,'tag_name');
+  A:=JGet(Rl,'assets');
+  If A>=0 Then Begin
+   Suffix:=PlatformSuffix;
+   C:=JP[A].First;
+   While C>=0 do Begin
+    Nm:=JS(C,'name');
+    If(Pos(Suffix,Nm)>0)or(Pos(StringReplace_(Suffix,'amd64','x86_64'),Nm)>0)Then Begin
+     Bin:=JoinPath(Dir,N+IfThen_(Pos('windows',Suffix)>0,'.exe',''));
+     ReqInit(R,'GET',ApiUrl('/repos/'+O+'/'+N+'/releases/assets/'+IStr(JI(C,'id'))),TokenOf(ApiHost));
+     R.Headers:='Accept: application/octet-stream'#13#10;
+     R.OutFile:=Bin;
+     HttpDo(R);
+     If not ApiOk(R)Then Die(ErrText(R));
+     {$IFNDEF WINDOWS}
+     RunShell('chmod +x '+Q(Bin));
+     {$ENDIF}
+     Found:=True;
+     Break;
+    End;
+    C:=JP[C].Next;
+   End;
+  End;
+ End;
+ If Found Then Begin
+  SClear(Y.K);SClear(Y.V);
+  YSet(Y,'owner',O);YSet(Y,'name',N);YSet(Y,'host',GitHostName(H));YSet(Y,'tag',Tag);YSet(Y,'ispinned',JBool(Pin<>''));
+  YSet(Y,'path',Bin);
+  YamlSave(JoinPath(Dir,'manifest.yml'),Y);
+ End
+ Else Begin
+  RmTree(Dir);
+  Url:=RepoClonePath(H,O,N,GitProto(H));
+  If GitFg('clone '+Q(Url)+' '+Q(Dir))<>0 Then Begin RmTree(Dir);Die('failed to install extension: git clone failed');End;
+  If Pin<>'' Then GitFg('-C '+Q(Dir)+' checkout '+Q(Pin));
+  If not FileExists_(JoinPath(Dir,N))Then Begin
+   RmTree(Dir);
+   Die('extension is not installable: no usable release artifact or script found in '+Spec);
+  End;
+  {$IFNDEF WINDOWS}
+  RunShell('chmod +x '+Q(JoinPath(Dir,N)));
+  {$ENDIF}
+ End;
+ InstallExt:=True;
+End;
+
+Procedure CmdExtInstall;
+Var
+ Spec,H,O,N:AnsiString;
+ Src:AnsiString;
+Begin
+ CmdBegin('extension install','<repository>');
+ Opt('force','','','Force upgrade extension, or ignore if latest already installed@@Force la mise '+#133+' jour de l''extension');
+ Opt('pin','','string','Pin extension to a release tag or commit ref@@'+#144+'pingle l''extension '+#133+' une '+#130+'tiquette ou une r'+#130+'f'+#130+'rence');
+ CmdLong('Install a GitHub repository locally as a GitHub CLI extension.@@Installe localement un d'+#130+'p'+#147+'t GitHub comme extension de GitHub CLI.');
+ ParseArgs(ArgStart);
+ NeedArgs(1,1);
+ Spec:=Pos1(0);
+ If Spec='.' Then Begin
+  Src:=AbsPath('.');
+  N:=BaseName(Src);
+  If not StartsWith(N,'gh-')Then Die('extension directory name must start with `gh-`');
+  MkDirs(ExtDir);
+  {$IFDEF WINDOWS}
+  Die('installing a local extension is not supported on this platform');
+  {$ELSE}
+  RunShell('ln -s '+Q(Src)+' '+Q(JoinPath(ExtDir,N)));
+  {$ENDIF}
+  WriteLn(StdErr,#226#156#147' Installed extension ',N);
+  Exit;
+ End;
+ InstallExt(Spec,OptGet('pin'),OptHas('force'));
+ If ParseRepoRef(Spec,H,O,N)Then WriteLn(StdErr,#226#156#147' Installed extension ',O,'/',N);
+End;
+
+Procedure CmdExtRemove;
+Var
+ Dir:AnsiString;
+Begin
+ CmdBegin('extension remove','<name>');
+ ParseArgs(ArgStart);
+ NeedArgs(1,1);
+ Dir:=JoinPath(ExtDir,'gh-'+ExtNameOf(Pos1(0)));
+ If not DirExists_(Dir)Then Die('no extension found: "gh-'+ExtNameOf(Pos1(0))+'"');
+ {$IFNDEF WINDOWS}
+ RunShell('rm -rf '+Q(Dir));
+ {$ELSE}
+ RmTree(Dir);
+ {$ENDIF}
+ WriteLn(StdErr,#226#156#147' Removed extension ',ExtNameOf(Pos1(0)));
+End;
+
+Procedure CmdExtUpgrade;
+Var
+ Names:TSList;
+ I:LongInt;
+ Dir,Repo:AnsiString;
+ Y:TYaml;
+ R:THttpReq;
+ Rl:LongInt;
+Begin
+ CmdBegin('extension upgrade','{<name> | --all}');
+ Opt('all','','','Upgrade all extensions@@Met '+#133+' jour toutes les extensions');
+ Opt('dry-run','','','Only display upgrades@@Affiche seulement les mises '+#133+' jour');
+ Opt('force','','','Force upgrade extension, or ignore if latest already installed@@Force la mise '+#133+' jour');
+ ParseArgs(ArgStart);
+ If OptHas('all')Then ListExtensions(Names)
+ Else Begin
+  NeedArgs(1,1);
+  SClear(Names);SAdd(Names,'gh-'+ExtNameOf(Pos1(0)));
+ End;
+ For I:=0 to Names.N-1 do Begin
+  Dir:=JoinPath(ExtDir,Names.A[I]);
+  If not DirExists_(Dir)Then Die('no extension matched "'+ExtNameOf(Names.A[I])+'"');
+  YamlLoad(JoinPath(Dir,'manifest.yml'),Y);
+  Repo:=ExtRepoOf(Dir);
+  If YGet(Y,'owner')<>'' Then Begin
+   ApiHost:=DefaultHost;
+   ApiCall(R,'GET','/repos/'+Repo+'/releases/latest','');
+   If not ApiOk(R)Then Begin WriteLn(StdErr,'X Failed upgrading extension ',ExtNameOf(Names.A[I]),': ',ErrText(R));Continue;End;
+   Rl:=JParse(R.RespBody);
+   If(JS(Rl,'tag_name')=YGet(Y,'tag'))and not OptHas('force')Then Begin
+    WriteLn(StdErr,#226#156#147' Extension ',ExtNameOf(Names.A[I]),' is already up to date');Continue;
+   End;
+   If OptHas('dry-run')Then Begin WriteLn(StdErr,'[',ExtNameOf(Names.A[I]),']: would have upgraded from ',YGet(Y,'tag'),' to ',JS(Rl,'tag_name'));Continue;End;
+   If YGet(Y,'ispinned')='true' Then Begin WriteLn(StdErr,'X Extension ',ExtNameOf(Names.A[I]),' is pinned and cannot be upgraded');Continue;End;
+   InstallExt(Repo,'',True);
+   WriteLn(StdErr,#226#156#147' Successfully upgraded extension ',ExtNameOf(Names.A[I]));
+  End
+  Else Begin
+   If OptHas('dry-run')Then Begin WriteLn(StdErr,'[',ExtNameOf(Names.A[I]),']: would have upgraded');Continue;End;
+   GitFg('-C '+Q(Dir)+' pull --ff-only');
+   WriteLn(StdErr,#226#156#147' Successfully upgraded extension ',ExtNameOf(Names.A[I]));
+  End;
+ End;
+End;
+
+Procedure CmdExtExec;
+Var
+ Nm,P,Cmd:AnsiString;
+ I:LongInt;
+Begin
+ CmdBegin('extension exec','<name> [args]');
+ ParseArgsStop;
+ NeedArgs(1,-1);
+ Nm:=ExtNameOf(Pos1(0));
+ P:=ExtensionPath(Nm);
+ If P='' Then Die('extension "'+Nm+'" not found');
+ Cmd:='';
+ For I:=1 to PosArgs.N-1 do Cmd:=Cmd+' '+Q(PosArgs.A[I]);
+ Halt(RunShell(Q(P)+Cmd));
+End;
+
+Procedure CmdExtSearch;
+Var
+ Q_:AnsiString;
+ L:TIList;
+ T:Int64;
+ I:LongInt;
+Begin
+ CmdBegin('extension search','[<query>]');
+ Opt('license','','strings','Filter based on license type@@Filtre selon le type de licence');
+ OptLimitN('Maximum number of search results',30);
+ Opt('owner','','strings','Filter on owner@@Filtre selon le propri'+#130+'taire');
+ OptWeb('Open the search query in the web browser@@Ouvre la recherche dans le navigateur');
+ OptJsonAll;
+ CmdJson(SrRepoFields);
+ ParseArgs(ArgStart);
+ NeedArgs(0,-1);
+ JsonSetup(SrRepoFields);
+ InitHostOpt;
+ Q_:=JoinList(PosArgs,' ');
+ QualAdd(Q_,'topic','gh-extension');
+ QualOpt(Q_,'license','license');QualOpt(Q_,'owner','user');
+ If OptHas('web')Then Begin OpenWeb(WebBaseOf(ApiHost)+'/search?q='+UrlEnc(Q_,False)+'&type=repositories');Exit;End;
+ RunSearch('repositories',Q_,OptInt('limit',30),L,T,'&sort=stars&order=desc','');
+ If UseJson Then Begin EmitItems(L,SrRepoSpec,@SearchHook);Exit;End;
+ If L.N=0 Then Begin WriteLn(StdErr,'No extensions found');Halt(1);End;
+ ShowingLine(L.N,T,'extensions','');
+ TblBegin('');
+ For I:=0 to L.N-1 do
+  TblRow(JS(L.A[I],'full_name')+#9+JS(L.A[I],'description'));
+ TblPrint;
+End;
+
+Procedure CmdExtBrowse;
+Var
+ L:TIList;
+ T:Int64;
+ I:LongInt;
+Begin
+ CmdBegin('extension browse','');
+ Opt('debug','','','log to /tmp/extBrowse@@'+#130+'crit un journal de d'+#130+'bogage');
+ OptWeb('Open the GitHub Topic page for extensions in the web browser@@Ouvre la page des sujets des extensions dans le navigateur');
+ ParseArgs(ArgStart);
+ NeedArgs(0,0);
+ InitHostOpt;
+ If OptHas('web')Then Begin OpenWeb(WebBaseOf(ApiHost)+'/topics/gh-extension');Exit;End;
+ RunSearch('repositories','topic:gh-extension',30,L,T,'&sort=stars&order=desc','');
+ For I:=0 to L.N-1 do
+  WriteLn(PadR(JS(L.A[I],'full_name'),40),' ',JI(L.A[I],'stargazers_count'),'  ',JS(L.A[I],'description'));
+End;
+
+Procedure CmdExtCreate;
+Var
+ Nm,Dir,Script:AnsiString;
+ T:Text;
+Begin
+ CmdBegin('extension create','[<name>]');
+ Opt('precompiled','','string','Create a precompiled extension. Possible values: go, other@@Cr'+#130+'e une extension pr'+#130+'compil'+#130+'e. Valeurs : go, other');
+ ParseArgs(ArgStart);
+ NeedArgs(0,1);
+ Nm:=Pos1(0);
+ If Nm='' Then Begin
+  If InteractiveOk Then Nm:=AskLine('Extension name','') Else Die2('extension name required when not running interactively',1);
+ End;
+ If not StartsWith(Nm,'gh-')Then Nm:='gh-'+Nm;
+ Dir:=AbsPath(Nm);
+ If DirExists_(Dir)Then Die('a directory named '+Nm+' already exists');
+ MkDirs(Dir);
+ Script:=JoinPath(Dir,Nm);
+ Assign(T,Script);Rewrite(T);
+ WriteLn(T,'#!/usr/bin/env bash');
+ WriteLn(T,'set -e');
+ WriteLn(T);
+ WriteLn(T,'echo "Hello ',Nm,'!"');
+ WriteLn(T);
+ WriteLn(T,'# Example of using the GitHub CLI in a script:');
+ WriteLn(T,'# gh api user --jq ".login"');
+ Close(T);
+ {$IFNDEF WINDOWS}
+ RunShell('chmod +x '+Q(Script));
+ {$ENDIF}
+ If InGitRepo=False Then RunShell('git -C '+Q(Dir)+' init -q');
+ WriteLn(StdErr,#226#156#147' Created directory ',Nm);
+ WriteLn(StdErr,#226#156#147' Initialized git repository');
+ WriteLn(StdErr,#226#156#147' Made initial commit');
+ WriteLn(StdErr,#226#156#147' Set up extension scaffolding');
+ WriteLn(StdErr);
+ WriteLn(StdErr,Nm,' is ready for development!');
+ WriteLn(StdErr);
+ WriteLn(StdErr,'Install locally with: cd ',Nm,' && gh extension install .');
+End;
+{ ------------------------------------------------------------------ }
 { Aide generale, sujets d'aide, distribution des commandes             }
 { ------------------------------------------------------------------ }
 
@@ -10790,7 +17068,7 @@ Begin
  Halt(RunShell(Q(ParamStr(0))+Cmd+' --help'));
 End;
 Const
- NDsp=46;
+ NDsp=174;
  Disp:Array[0..NDsp-1]of TDisp=(  (P:'alias delete';F:@CmdAliasDelete),
   (P:'alias imports';F:@CmdAliasImports),
   (P:'alias list';F:@CmdAliasList),
@@ -10805,13 +17083,111 @@ Const
   (P:'auth switch';F:@CmdAuthSwitch),
   (P:'auth token';F:@CmdAuthToken),
   (P:'browse';F:@CmdBrowse),
+  (P:'cache delete';F:@CmdCacheDelete),
+  (P:'cache list';F:@CmdCacheList),
+  (P:'codespace code';F:@CmdCodespaceCode),
+  (P:'codespace cp';F:@CmdCodespaceCp),
+  (P:'codespace create';F:@CmdCodespaceCreate),
+  (P:'codespace delete';F:@CmdCodespaceDelete),
+  (P:'codespace edit';F:@CmdCodespaceEdit),
+  (P:'codespace jupyter';F:@CmdCodespaceJupyter),
+  (P:'codespace list';F:@CmdCodespaceList),
+  (P:'codespace logs';F:@CmdCodespaceLogs),
+  (P:'codespace ports';F:@CmdCodespacePorts),
+  (P:'codespace rebuild';F:@CmdCodespaceRebuild),
+  (P:'codespace ssh';F:@CmdCodespaceSsh),
+  (P:'codespace stop';F:@CmdCodespaceStop),
+  (P:'codespace view';F:@CmdCodespaceView),
   (P:'completion';F:@CmdCompletion),
   (P:'config clear-cache';F:@CmdConfigClear),
   (P:'config get';F:@CmdConfigGet),
   (P:'config list';F:@CmdConfigList),
   (P:'config set';F:@CmdConfigSet),
+  (P:'extension browse';F:@CmdExtBrowse),
+  (P:'extension create';F:@CmdExtCreate),
+  (P:'extension exec';F:@CmdExtExec),
+  (P:'extension install';F:@CmdExtInstall),
+  (P:'extension list';F:@CmdExtList),
+  (P:'extension remove';F:@CmdExtRemove),
+  (P:'extension search';F:@CmdExtSearch),
+  (P:'extension upgrade';F:@CmdExtUpgrade),
+  (P:'gist clone';F:@CmdGistClone),
+  (P:'gist create';F:@CmdGistCreate),
+  (P:'gist delete';F:@CmdGistDelete),
+  (P:'gist edit';F:@CmdGistEdit),
+  (P:'gist list';F:@CmdGistList),
+  (P:'gist rename';F:@CmdGistRename),
+  (P:'gist view';F:@CmdGistView),
+  (P:'gpg-key add';F:@CmdGpgKeyAdd),
+  (P:'gpg-key delete';F:@CmdGpgKeyDelete),
+  (P:'gpg-key list';F:@CmdGpgKeyList),
   (P:'help';F:@CmdHelp),
+  (P:'issue close';F:@CmdIssueClose),
+  (P:'issue comment';F:@CmdIssueComment),
+  (P:'issue create';F:@CmdIssueCreate),
+  (P:'issue delete';F:@CmdIssueDelete),
+  (P:'issue develop';F:@CmdIssueDevelop),
+  (P:'issue edit';F:@CmdIssueEdit),
+  (P:'issue list';F:@CmdIssueList),
+  (P:'issue lock';F:@CmdIssueLock),
+  (P:'issue pin';F:@CmdIssuePin),
+  (P:'issue reopen';F:@CmdIssueReopen),
+  (P:'issue status';F:@CmdIssueStatus),
+  (P:'issue transfer';F:@CmdIssueTransfer),
+  (P:'issue unlock';F:@CmdIssueUnlock),
+  (P:'issue unpin';F:@CmdIssueUnpin),
+  (P:'issue view';F:@CmdIssueView),
+  (P:'label clone';F:@CmdLabelClone),
+  (P:'label create';F:@CmdLabelCreate),
+  (P:'label delete';F:@CmdLabelDelete),
+  (P:'label edit';F:@CmdLabelEdit),
+  (P:'label list';F:@CmdLabelList),
   (P:'org list';F:@CmdOrgList),
+  (P:'pr checkout';F:@CmdPrCheckout),
+  (P:'pr checks';F:@CmdPrChecks),
+  (P:'pr close';F:@CmdPrClose),
+  (P:'pr comment';F:@CmdPrComment),
+  (P:'pr create';F:@CmdPrCreate),
+  (P:'pr diff';F:@CmdPrDiff),
+  (P:'pr edit';F:@CmdPrEdit),
+  (P:'pr list';F:@CmdPrList),
+  (P:'pr lock';F:@CmdPrLock),
+  (P:'pr merge';F:@CmdPrMerge),
+  (P:'pr ready';F:@CmdPrReady),
+  (P:'pr reopen';F:@CmdPrReopen),
+  (P:'pr revert';F:@CmdPrRevert),
+  (P:'pr review';F:@CmdPrReview),
+  (P:'pr status';F:@CmdPrStatus),
+  (P:'pr unlock';F:@CmdPrUnlock),
+  (P:'pr update-branch';F:@CmdPrUpdateBranch),
+  (P:'pr view';F:@CmdPrView),
+  (P:'project close';F:@CmdProjectClose),
+  (P:'project copy';F:@CmdProjectCopy),
+  (P:'project create';F:@CmdProjectCreate),
+  (P:'project delete';F:@CmdProjectDelete),
+  (P:'project edit';F:@CmdProjectEdit),
+  (P:'project field-create';F:@CmdProjectFieldCreate),
+  (P:'project field-delete';F:@CmdProjectFieldDelete),
+  (P:'project field-list';F:@CmdProjectFieldList),
+  (P:'project item-add';F:@CmdProjectItemAdd),
+  (P:'project item-archive';F:@CmdProjectItemArchive),
+  (P:'project item-create';F:@CmdProjectItemCreate),
+  (P:'project item-delete';F:@CmdProjectItemDelete),
+  (P:'project item-edit';F:@CmdProjectItemEdit),
+  (P:'project item-list';F:@CmdProjectItemList),
+  (P:'project link';F:@CmdProjectLink),
+  (P:'project list';F:@CmdProjectList),
+  (P:'project mark-template';F:@CmdProjectMarkTemplate),
+  (P:'project unlink';F:@CmdProjectUnlink),
+  (P:'project view';F:@CmdProjectView),
+  (P:'release create';F:@CmdReleaseCreate),
+  (P:'release delete';F:@CmdReleaseDelete),
+  (P:'release delete-asset';F:@CmdReleaseDeleteAsset),
+  (P:'release download';F:@CmdReleaseDownload),
+  (P:'release edit';F:@CmdReleaseEdit),
+  (P:'release list';F:@CmdReleaseList),
+  (P:'release upload';F:@CmdReleaseUpload),
+  (P:'release view';F:@CmdReleaseView),
   (P:'repo archive';F:@CmdRepoArchive),
   (P:'repo autolink create';F:@CmdAutolinkCreate),
   (P:'repo autolink delete';F:@CmdAutolinkDelete),
@@ -10835,8 +17211,38 @@ Const
   (P:'repo sync';F:@CmdRepoSync),
   (P:'repo unarchive';F:@CmdRepoUnarchive),
   (P:'repo view';F:@CmdRepoView),
+  (P:'ruleset check';F:@CmdRulesetCheck),
+  (P:'ruleset list';F:@CmdRulesetList),
+  (P:'ruleset view';F:@CmdRulesetView),
+  (P:'run cancel';F:@CmdRunCancel),
+  (P:'run delete';F:@CmdRunDelete),
+  (P:'run download';F:@CmdRunDownload),
+  (P:'run list';F:@CmdRunList),
+  (P:'run rerun';F:@CmdRunRerun),
+  (P:'run view';F:@CmdRunView),
+  (P:'run watch';F:@CmdRunWatch),
+  (P:'search code';F:@CmdSearchCode),
+  (P:'search commits';F:@CmdSearchCommits),
+  (P:'search issues';F:@CmdSearchIssues),
+  (P:'search prs';F:@CmdSearchPrs),
+  (P:'search repos';F:@CmdSearchRepos),
+  (P:'secret delete';F:@CmdSecretDelete),
+  (P:'secret list';F:@CmdSecretList),
+  (P:'secret set';F:@CmdSecretSet),
+  (P:'ssh-key add';F:@CmdSshKeyAdd),
+  (P:'ssh-key delete';F:@CmdSshKeyDelete),
+  (P:'ssh-key list';F:@CmdSshKeyList),
   (P:'status';F:@CmdStatus),
-  (P:'version';F:@CmdVersion));
+  (P:'variable delete';F:@CmdVariableDelete),
+  (P:'variable get';F:@CmdVariableGet),
+  (P:'variable list';F:@CmdVariableList),
+  (P:'variable set';F:@CmdVariableSet),
+  (P:'version';F:@CmdVersion),
+  (P:'workflow disable';F:@CmdWorkflowDisable),
+  (P:'workflow enable';F:@CmdWorkflowEnable),
+  (P:'workflow list';F:@CmdWorkflowList),
+  (P:'workflow run';F:@CmdWorkflowRun),
+  (P:'workflow view';F:@CmdWorkflowView));
 
 Function FindDisp(Const Path:AnsiString):TProc;
 Var
@@ -10884,19 +17290,6 @@ Begin
  End;
  Ex:=ExpandAliasText(Ex,2,True);
  Halt(RunShell(SelfCmd+' '+Ex));
-End;
-
-{ extension installee : gh-NOM dans le repertoire des extensions }
-Function ExtensionPath(Const Nm:AnsiString):AnsiString;
-Var
- D,P:AnsiString;
-Begin
- D:=JoinPath(JoinPath(DataDir,'extensions'),'gh-'+Nm);
- P:=JoinPath(D,'gh-'+Nm);
- {$IFDEF WINDOWS}
- If FileExists_(P+'.exe')Then Begin ExtensionPath:=P+'.exe';Exit;End;
- {$ENDIF}
- If FileExists_(P)Then ExtensionPath:=P Else ExtensionPath:='';
 End;
 
 Procedure NoSuchCommand(Const Parent,Sub:AnsiString);
