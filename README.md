@@ -24,10 +24,6 @@ Les fichiers Pascal n'ont aucune dépendances, il suffit de télécharger le fic
 
 <pre><b>fpc</b> <i>LEFICHIER.PAS</i></pre>
 	
-Sinon, vous pouvez également le compiler avec le Turbo Pascal à l'aide de la syntaxe de commande suivante :	
-
-<pre><b>tpc</b> <i>LEFICHIER.PAS</i></pre>
-	
 <h2>Licence</h2>
 <ul>
  <li>Le code source est publié sous la licence <a href="https://github.com/gladir/CLOUD-0/blob/master/LICENSE">MIT</a>.</li>
