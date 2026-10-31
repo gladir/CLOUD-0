@@ -15,6 +15,14 @@ Voici la liste des différents fichiers proposés dans CLOUD-0 :
      <td><b>HF.PAS</b></td>
      <td>Cette commande permet de gérer le Hugging Face Hub à la manière de la commande <code>hf</code> : authentification (<code>auth login|logout|whoami|list|switch</code>), téléchargement de modèles, jeux de données et Spaces avec cache et reprise (<code>download</code>), envoi de fichiers et dossiers avec LFS (<code>upload</code>), consultation (<code>models|datasets|spaces ls|info</code>), gestion des dépôts, du cache local, des collections, des discussions, des Jobs et des Inference Endpoints. Ce n'est pas un moteur d'exécution de modèles.</td>
   </tr>
+  <tr>
+     <td><b>GH.PAS</b></td>
+     <td>Cette commande permet de gérer GitHub à la manière de la commande <code>gh</code> (GitHub CLI) : authentification (<code>auth</code>), dépôts (<code>repo</code>), tickets (<code>issue</code>), pull requests (<code>pr</code>), GitHub Actions (<code>workflow</code>, <code>run</code>, <code>cache</code>), versions publiées (<code>release</code>), gists, projets, organisations, secrets et variables, clés SSH et GPG, recherche (<code>search</code>), extensions, alias et appels directs à l'API REST/GraphQL (<code>api</code>) avec filtres <code>--json</code>, <code>--jq</code> et <code>--template</code>.</td>
+  </tr>
+  <tr>
+     <td><b>JIRA.PAS</b></td>
+     <td>Cette commande permet de gérer Jira à la manière de la commande <code>jira</code> (jira-cli) : configuration de la connexion (<code>init</code>), utilisateur (<code>me</code>), tickets (<code>issue list|view|create|edit|move|assign|comment|delete|link|unlink|clone|worklog</code>) avec filtres <code>-t -s -y -a -l -q</code> et sorties <code>--plain</code>, <code>--raw</code> et <code>--csv</code>, epics (<code>epic</code>), sprints (<code>sprint</code>), projets, tableaux Agile, versions (<code>release</code>) et ouverture dans le navigateur (<code>open</code>).</td>
+  </tr>
 </table>
 
 
