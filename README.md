@@ -1,5 +1,5 @@
 # CLOUD-0
-Suite de commande écrit en Turbo Pascal/Free Pascal pour l'infonuagique (Cloud).
+Suite de commande écrit en Free Pascal pour l'infonuagique (Cloud).
 
 <h2>Liste des fichiers</h2>
 
