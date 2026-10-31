@@ -4,7 +4,8 @@
   @website(https://www.gladir.com/vie)
   @abstract(Target: Free Pascal 3.x)
 
-  JIRA : clone de la commande jira (jira-cli, https://github.com/ankitpokhrel/jira-cli).
+  JIRA : clone de la commande jira (jira-cli,
+  https://github.com/ankitpokhrel/jira-cli).
 
   Syntaxe generale :
    jira <commande> <sous-commande> [parametres]
@@ -13,15 +14,20 @@
    jira init | jira me | jira open PROJ-123
    jira issue list -tBug -sOpen --plain
    jira issue view PROJ-123 | jira issue assign PROJ-123 "Jean Tremblay"
-   jira issue create -tBug -s"Erreur de compilation" -yHigh -b"Le compilateur plante" --no-input
-   jira issue move PROJ-123 "In Progress" | jira issue comment add PROJ-123 "Corrige"
-   jira sprint list --current | jira sprint add 42 PROJ-1 PROJ-2 | jira project list
+   jira issue create -tBug -s"Erreur de compilation" -yHigh -b"Le compilateur
+   plante" --no-input
+   jira issue move PROJ-123 "In Progress" | jira issue comment add PROJ-123
+   "Corrige"
+   jira sprint list --current | jira sprint add 42 PROJ-1 PROJ-2 | jira project
+   list
 
-  Commandes prises en charge (chacune accepte --help, ex. : jira issue list --help) :
+  Commandes prises en charge (chacune accepte --help, ex. : jira issue list
+  --help) :
    init                    configure la connexion a Jira
    me                      affiche l'utilisateur connecte
    open [CLE]              ouvre Jira (projet ou ticket) dans le navigateur
-   issue list              liste les tickets (filtres -t -s -y -a -r -l -C -P -R -q ...)
+   issue list              liste les tickets (filtres -t -s -y -a -r -l -C -P -R
+   -q ...)
    issue view              affiche un ticket (--comments N)
    issue create            cree un ticket (mode interactif ou --no-input)
    issue edit              modifie un ticket
@@ -39,15 +45,18 @@
    board list              tableaux Agile
    serverinfo, completion, man, version
 
-  Options generales : -c/--config FICHIER, -p/--project CLE, --debug, --help, --version.
+  Options generales : -c/--config FICHIER, -p/--project CLE, --debug, --help,
+  --version.
   Options de sortie des listes : --plain, --raw (JSON), --csv, --no-headers,
   --columns, --delimiter, --paginate DEBUT:LIMITE.
 
   Fonctionnement :
-   - configuration : ~/.config/.jira/.config.yml (ou -c, JIRA_CONFIG_FILE) : serveur,
+   - configuration : ~/.config/.jira/.config.yml (ou -c, JIRA_CONFIG_FILE) :
+   serveur,
      identifiant, type d'installation (Cloud ou Local), projet, tableau.
    - jeton : variable JIRA_API_TOKEN (sinon ~/.netrc), envoye en Basic
-     (identifiant:jeton) ou en Bearer (JIRA_AUTH_TYPE=bearer ou auth_type: bearer).
+     (identifiant:jeton) ou en Bearer (JIRA_AUTH_TYPE=bearer ou auth_type:
+     bearer).
    - API REST v2 de Jira (et Agile 1.0 pour les sprints, tableaux et epics).
    - Windows : appels reseau par WinInet (wininet.dll) ; autres systemes : curl.
      Sous DOS, les appels reseau ne sont pas disponibles.
@@ -639,7 +648,8 @@ Begin
  End;
 End;
 
-{ liste recursive des fichiers : chemins relatifs avec '/' (la liste est videe) }
+{ liste recursive des fichiers : chemins relatifs avec '/' (la liste est videe)
+  }
 Procedure WalkFiles(Const Root,Rel:AnsiString;Var L:TSList);
 Begin
  SClear(L);
@@ -704,7 +714,8 @@ Var
  DT:DateTime;
 Begin
  UnpackTime(T,DT);
- PackedEpoch:=DaysFromCivil(DT.Year,DT.Month,DT.Day)*86400+DT.Hour*3600+DT.Min*60+DT.Sec;
+ PackedEpoch:=DaysFromCivil(DT.Year,DT.Month,
+   DT.Day)*86400+DT.Hour*3600+DT.Min*60+DT.Sec;
 End;
 
 Function FileMTime(Const P:AnsiString):Int64;
@@ -743,7 +754,8 @@ Begin
  D:=Doy-(153*Mp+2)div 5+1;
  If Mp<10 Then M:=Mp+3 Else M:=Mp-9;
  If M<=2 Then Inc(Y);
- S:=IStr(Y)+'-'+P2(M)+'-'+P2(D)+' '+P2(Rem_ div 3600)+':'+P2((Rem_ mod 3600)div 60)+
+ S:=IStr(Y)+'-'+P2(M)+'-'+P2(D)+' '+P2(Rem_ div 3600)+':'+P2((Rem_ mod 3600)
+   div 60)+
    ':'+P2(Rem_ mod 60);
  StampToStr:=S;
 End;
@@ -793,7 +805,8 @@ End;
 { Globs (fnmatch) et URL                                              }
 { ------------------------------------------------------------------ }
 
-Function GlobMatch(Const P:AnsiString;PI:LongInt;Const S:AnsiString;SI:LongInt):Boolean;
+Function GlobMatch(Const P:AnsiString;PI:LongInt;Const S:AnsiString;
+  SI:LongInt):Boolean;
 Var
  C:Char;
  J:LongInt;
@@ -886,7 +899,8 @@ Begin
  UrlQ:=UrlEnc(S,False);
 End;
 
-Procedure SplitUrl(Const U:AnsiString;Var Scheme,Host:AnsiString;Var Port:LongInt;Var
+Procedure SplitUrl(Const U:AnsiString;Var Scheme,Host:AnsiString;
+  Var Port:LongInt;Var
   Path:AnsiString);
 Var
  P,Q:LongInt;
@@ -933,7 +947,8 @@ Begin
  If(Pos('://',Loc)>0)and(Pos('://',Loc)<8)Then Begin ResolveUrl:=Loc;Exit;End;
  SplitUrl(Base,Sc,H,Po,Pa);
  Pre:=Sc+'://'+H;
- If((Sc='https')and(Po<>443))or((Sc='http')and(Po<>80))Then Pre:=Pre+':'+IStr(Po);
+ If((Sc='https')and(Po<>443))or((Sc='http')and(Po<>80))Then Pre:=Pre+':'+
+   IStr(Po);
  If StartsWith(Loc,'/')Then ResolveUrl:=Pre+Loc
  Else Begin
   I:=Length(Pa);
@@ -996,7 +1011,8 @@ Function Utf8Enc(C:LongWord):AnsiString;
 Begin
  If C<$80 Then Utf8Enc:=Chr(C)
  Else If C<$800 Then Utf8Enc:=Chr($C0 or(C shr 6))+Chr($80 or(C and $3F))
- Else If C<$10000 Then Utf8Enc:=Chr($E0 or(C shr 12))+Chr($80 or((C shr 6)and $3F))+
+ Else If C<$10000 Then Utf8Enc:=Chr($E0 or(C shr 12))+Chr($80 or((C shr 6)and
+   $3F))+
    Chr($80 or(C and $3F))
  Else Utf8Enc:=Chr($F0 or(C shr 18))+Chr($80 or((C shr 12)and $3F))+
    Chr($80 or((C shr 6)and $3F))+Chr($80 or(C and $3F));
@@ -1130,7 +1146,8 @@ Begin
  End
  Else If C in['-','0'..'9']Then Begin
   Q:=JPos;
-  While(JPos<=Length(JSrc))and(JSrc[JPos]in['-','+','.','e','E','0'..'9'])do Inc(JPos);
+  While(JPos<=Length(JSrc))and(JSrc[JPos]in['-','+','.','e','E',
+    '0'..'9'])do Inc(JPos);
   Result:=JNew(JK_NUM);
   JP[Result].S:=Copy(JSrc,Q,JPos-Q);
  End
@@ -1190,7 +1207,8 @@ End;
 
 Function JTxt(N:LongInt):AnsiString;
 Begin
- If N<0 Then JTxt:='' Else If JP[N].Kind in[JK_STR,JK_NUM,JK_BOOL]Then JTxt:=JP[N].S
+ If N<0 Then JTxt:='' Else If JP[N].Kind in[JK_STR,JK_NUM,
+   JK_BOOL]Then JTxt:=JP[N].S
   Else JTxt:='';
 End;
 
@@ -1239,7 +1257,8 @@ Begin
    #10:BufAdd(B,'\n');
    #13:BufAdd(B,'\r');
    #9:BufAdd(B,'\t');
-   #0..#8,#11,#12,#14..#31:BufAdd(B,'\u00'+Hex[(Ord(C)shr 4)+1]+Hex[(Ord(C)and 15)+1]);
+   #0..#8,#11,#12,#14..#31:BufAdd(B,'\u00'+Hex[(Ord(C)shr 4)+1]+Hex[(Ord(C)and
+     15)+1]);
    Else BufAdd(B,C);
   End;
  End;
@@ -1296,7 +1315,8 @@ Begin
  WriteLn(BufStr(B));
 End;
 Const
- B64:AnsiString='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+ B64:AnsiString='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz012345678'+
+   '9+/';
 
 Procedure B64Add(Var B:TBuf;Const S:AnsiString);
 Var
@@ -1457,7 +1477,8 @@ End;
 Function BuildHeaders(Var R:THttpReq):AnsiString;
 Begin
  Result:='Accept-Encoding: identity'#13#10'X-Atlassian-Token: no-check'#13#10;
- If Pos('accept:',LoStr(R.Headers))=0 Then Result:=Result+'Accept: application/json'#13#10;
+ If Pos('accept:',LoStr(R.Headers))=0 Then Result:=Result+
+   'Accept: application/json'#13#10;
  {$IFNDEF WINDOWS}
  Result:=Result+'User-Agent: '+UserAgent+#13#10;
  {$ENDIF}
@@ -1520,9 +1541,11 @@ Function HttpSendRequestA(H:Pointer;Hdr:PChar;HdrLen:LongWord;Opt:Pointer;
 Function HttpSendRequestExA(H:Pointer;InBuf,OutBuf:Pointer;Flags:LongWord;
   Ctx:PtrUInt):LongInt;
  stdcall;external 'wininet.dll' name 'HttpSendRequestExA';
-Function InternetWriteFile(H:Pointer;Buf:Pointer;N:LongWord;Var Written:LongWord):LongInt;
+Function InternetWriteFile(H:Pointer;Buf:Pointer;N:LongWord;
+  Var Written:LongWord):LongInt;
  stdcall;external 'wininet.dll' name 'InternetWriteFile';
-Function HttpEndRequestA(H:Pointer;OutBuf:Pointer;Flags:LongWord;Ctx:PtrUInt):LongInt;
+Function HttpEndRequestA(H:Pointer;OutBuf:Pointer;Flags:LongWord;
+  Ctx:PtrUInt):LongInt;
  stdcall;external 'wininet.dll' name 'HttpEndRequestA';
 Function InternetReadFile(H:Pointer;Buf:Pointer;ToRead:LongWord;Var
   Got:LongWord):LongInt;
@@ -1532,7 +1555,8 @@ Function InternetCloseHandle(H:Pointer):LongInt;
 Function HttpQueryInfoA(H:Pointer;InfoLevel:LongWord;Buf:Pointer;Var
   BufLen:LongWord;Index:Pointer):LongInt;
  stdcall;external 'wininet.dll' name 'HttpQueryInfoA';
-Function InternetSetOptionA(H:Pointer;Opt:LongWord;Buf:Pointer;BufLen:LongWord):LongInt;
+Function InternetSetOptionA(H:Pointer;Opt:LongWord;Buf:Pointer;
+  BufLen:LongWord):LongInt;
  stdcall;external 'wininet.dll' name 'InternetSetOptionA';
 
 Procedure HttpOnce(Var R:THttpReq);
@@ -1723,7 +1747,8 @@ Var
 Begin
  R.Status:=0;R.RespHeaders:='';R.RespBody:='';R.Err:='';R.Got:=0;R.Total:=-1;
  Curl:=FSearch('curl',GetEnv('PATH'));
- If Curl='' Then Begin R.Err:='curl not found (needed on non-Windows systems)';Exit;End;
+ If Curl='' Then Begin R.Err:='curl not found (needed on non-Windows systems)';
+   Exit;End;
  Cfg:=TempName('.cfg');HFile:=TempName('.hdr');OFile:=TempName('.out');
  BFile:='';TmpBody:=False;
  UseBody:=(R.BodyFile<>'')or(Length(R.BodyStr)>0);
@@ -1732,7 +1757,8 @@ Begin
    BFile:=TempName('.body');TmpBody:=True;
    WriteAll(BFile,R.BodyStr);
   End
-  Else If(R.BodyOfs=0)and(R.BodyLen=FileSizeOf(R.BodyFile))Then BFile:=R.BodyFile
+  Else If(R.BodyOfs=0)and(R.BodyLen=FileSizeOf(R.BodyFile))Then BFile:=
+    R.BodyFile
   Else Begin
    BFile:=TempName('.body');TmpBody:=True;
    Assign(F,R.BodyFile);Reset(F,1);Seek(F,R.BodyOfs);
@@ -1764,7 +1790,8 @@ Begin
  For I:=0 to L.N-1 do If L.A[I]<>'' Then WriteLn(T,'header = ',CfgQ(L.A[I]));
  If UseBody Then Begin
   WriteLn(T,'header = "Expect:"');
-  If Pos('content-type',LoStr(R.Headers))=0 Then WriteLn(T,'header = "Content-Type:"');
+  If Pos('content-type',LoStr(R.Headers))=0 Then WriteLn(T,
+    'header = "Content-Type:"');
   WriteLn(T,'data-binary = ',CfgQ('@'+BFile));
  End;
  Close(T);
@@ -1773,7 +1800,8 @@ Begin
  Exec(Curl,'-K '+Cfg);
  SwapVectors;
  If DosError<>0 Then R.Err:='cannot run curl'
- Else If DosExitCode<>0 Then R.Err:='curl failed with exit code '+IStr(DosExitCode);
+ Else If DosExitCode<>0 Then R.Err:='curl failed with exit code '+
+   IStr(DosExitCode);
  If ReadAll(HFile,Dat)Then Begin
   R.RespHeaders:=LastHeaderBlock(Dat);
   R.Status:=StatusFromHeaders(R.RespHeaders);
@@ -1814,7 +1842,8 @@ Begin
 End;
 {$ENDIF}
 
-{ requete avec redirections manuelles : le jeton n'est envoye qu'a l'hote d'origine }
+{ requete avec redirections manuelles : le jeton n'est envoye qu'a l'hote
+  d'origine }
 Procedure HttpDo(Var R:THttpReq);
 Var
  I:LongInt;
@@ -1826,7 +1855,8 @@ Begin
  For I:=1 to 10 do Begin
   HttpOnce(R);
   If R.Err<>'' Then Exit;
-  If(R.Status<>301)and(R.Status<>302)and(R.Status<>303)and(R.Status<>307)and(R.Status<>308)Then
+  If(R.Status<>301)and(R.Status<>302)and(R.Status<>303)and(R.Status<>307)
+    and(R.Status<>308)Then
     Exit;
   If not R.Follow Then Exit;
   Loc:=HeaderGet(R.RespHeaders,'location');
@@ -1872,51 +1902,79 @@ Type
 Const
  NDesc=39;
  Descs:Array[0..NDesc-1]of TCmdDesc=(
-  (P:'';D:'Interactive Jira command line@@Interface en ligne de commande pour Jira'),
-  (P:'board';D:'Board related commands@@Commandes li'+#130+'es aux tableaux Agile'),
-  (P:'board list';D:'List all boards in a project@@Liste les tableaux d''un projet'),
-  (P:'completion';D:'Output shell completion script (bash, zsh, fish, powershell)@@G'+#130+'n'+#138+'re le script de compl'+#130+'tion du shell (bash, zsh, fish, powershell)'),
+  (P:'';D:'Interactive Jira command line@@Interface en ligne de commande pour '+
+    'Jira'),
+  (P:'board';D:'Board related commands@@Commandes li'+#130+
+    'es aux tableaux Agile'),
+  (P:'board list';D:'List all boards in a project@@Liste les tableaux d''un '+
+    'projet'),
+  (P:'completion';D:'Output shell completion script (bash, zsh, fish, '+
+    'powershell)@@G'+#130+'n'+#138+'re le script de compl'+#130+
+    'tion du shell (bash, zsh, fish, powershell)'),
   (P:'epic';D:'Manage epics in a project@@G'+#138+'re les epics d''un projet'),
   (P:'epic add';D:'Add issues to an epic@@Ajoute des tickets '+#133+' un epic'),
-  (P:'epic create';D:'Create an epic in a project@@Cr'+#130+'e un epic dans un projet'),
-  (P:'epic list';D:'List epics, or the issues of an epic@@Liste les epics ou les tickets d''un epic'),
-  (P:'epic remove';D:'Remove issues from an epic@@Retire des tickets de leur epic'),
-  (P:'init';D:'Initialize the Jira config@@Configure la connexion '+#133+' Jira'),
+  (P:'epic create';D:'Create an epic in a project@@Cr'+#130+
+    'e un epic dans un projet'),
+  (P:'epic list';D:'List epics, or the issues of an epic@@Liste les epics ou '+
+    'les tickets d''un epic'),
+  (P:'epic remove';D:'Remove issues from an epic@@Retire des tickets de leur '+
+    'epic'),
+  (P:'init';D:'Initialize the Jira config@@Configure la connexion '+#133+
+    ' Jira'),
   (P:'issue';D:'Issue related commands@@Commandes li'+#130+'es aux tickets'),
-  (P:'issue assign';D:'Assign issue to a user@@Assigne un ticket '+#133+' un utilisateur'),
+  (P:'issue assign';D:'Assign issue to a user@@Assigne un ticket '+#133+
+    ' un utilisateur'),
   (P:'issue clone';D:'Clone an issue@@Clone un ticket'),
-  (P:'issue comment';D:'Manage issue comments@@G'+#138+'re les commentaires d''un ticket'),
-  (P:'issue comment add';D:'Add a comment to an issue@@Ajoute un commentaire '+#133+' un ticket'),
-  (P:'issue create';D:'Create an issue in a project@@Cr'+#130+'e un ticket dans un projet'),
+  (P:'issue comment';D:'Manage issue comments@@G'+#138+
+    're les commentaires d''un ticket'),
+  (P:'issue comment add';D:'Add a comment to an issue@@Ajoute un commentaire '+
+    #133+' un ticket'),
+  (P:'issue create';D:'Create an issue in a project@@Cr'+#130+
+    'e un ticket dans un projet'),
   (P:'issue delete';D:'Delete an issue@@Supprime un ticket'),
   (P:'issue edit';D:'Edit an issue in a project@@Modifie un ticket'),
   (P:'issue link';D:'Link two issues together@@Lie deux tickets'),
-  (P:'issue link remote';D:'Add a remote web link to an issue@@Ajoute un lien web distant '+#133+' un ticket'),
+  (P:'issue link remote';D:'Add a remote web link to an issue@@Ajoute un lien '+
+    'web distant '+#133+' un ticket'),
   (P:'issue list';D:'List issues in a project@@Liste les tickets d''un projet'),
-  (P:'issue move';D:'Transition an issue to a given state@@Change l'''+#130+'tat d''un ticket (transition)'),
-  (P:'issue unlink';D:'Unlink two linked issues@@D'+#130+'lie deux tickets li'+#130+'s'),
-  (P:'issue view';D:'Display issue details@@Affiche le d'+#130+'tail d''un ticket'),
-  (P:'issue worklog';D:'Manage issue worklogs@@G'+#138+'re le temps de travail d''un ticket'),
-  (P:'issue worklog add';D:'Add a worklog to an issue@@Ajoute du temps de travail '+#133+' un ticket'),
+  (P:'issue move';D:'Transition an issue to a given state@@Change l'''+#130+
+    'tat d''un ticket (transition)'),
+  (P:'issue unlink';D:'Unlink two linked issues@@D'+#130+'lie deux tickets li'+
+    #130+'s'),
+  (P:'issue view';D:'Display issue details@@Affiche le d'+#130+
+    'tail d''un ticket'),
+  (P:'issue worklog';D:'Manage issue worklogs@@G'+#138+
+    're le temps de travail d''un ticket'),
+  (P:'issue worklog add';D:'Add a worklog to an issue@@Ajoute du temps de '+
+    'travail '+#133+' un ticket'),
   (P:'man';D:'Generate man page@@G'+#130+'n'+#138+'re la page de manuel'),
-  (P:'me';D:'Displays configured jira user@@Affiche l''utilisateur Jira configur'+#130+''),
-  (P:'open';D:'Open issue in a browser@@Ouvre un ticket ou le projet dans le navigateur'),
-  (P:'project';D:'Project related commands@@Commandes li'+#130+'es aux projets'),
-  (P:'project list';D:'List all projects that a user has access to@@Liste les projets accessibles'),
-  (P:'release';D:'Manage project releases@@G'+#138+'re les versions d''un projet'),
+  (P:'me';D:'Displays configured jira user@@Affiche l''utilisateur Jira '+
+    'configur'+#130+''),
+  (P:'open';D:'Open issue in a browser@@Ouvre un ticket ou le projet dans le '+
+    'navigateur'),
+  (P:'project';D:'Project related commands@@Commandes li'+#130+
+    'es aux projets'),
+  (P:'project list';D:'List all projects that a user has access to@@Liste les '+
+    'projets accessibles'),
+  (P:'release';D:'Manage project releases@@G'+#138+'re les versions d''un '+
+    'projet'),
   (P:'release list';D:'List project releases@@Liste les versions d''un projet'),
-  (P:'serverinfo';D:'Get Jira instance info@@Affiche les informations du serveur Jira'),
+  (P:'serverinfo';D:'Get Jira instance info@@Affiche les informations du '+
+    'serveur Jira'),
   (P:'sprint';D:'Sprint related commands@@Commandes li'+#130+'es aux sprints'),
-  (P:'sprint add';D:'Add issues to a sprint@@Ajoute des tickets '+#133+' un sprint'),
+  (P:'sprint add';D:'Add issues to a sprint@@Ajoute des tickets '+#133+
+    ' un sprint'),
   (P:'sprint close';D:'Close a sprint@@Ferme un sprint'),
-  (P:'sprint list';D:'List sprints, or the issues of a sprint@@Liste les sprints ou les tickets d''un sprint'),
+  (P:'sprint list';D:'List sprints, or the issues of a sprint@@Liste les '+
+    'sprints ou les tickets d''un sprint'),
   (P:'version';D:'Print version information@@Affiche la version'));
 
 Function DescOf(Const Path:AnsiString):AnsiString;
 Var
  I:LongInt;
 Begin
- For I:=0 to NDesc-1 do If Descs[I].P=Path Then Begin DescOf:=Tx(Descs[I].D);Exit;End;
+ For I:=0 to NDesc-1 do If Descs[I].P=Path Then Begin DescOf:=Tx(Descs[I].D);
+   Exit;End;
  DescOf:='';
 End;
 { ------------------------------------------------------------------ }
@@ -1924,12 +1982,14 @@ End;
 { ------------------------------------------------------------------ }
 
 {$IFDEF WINDOWS}
-Function GetStdHandle(N:LongWord):PtrUInt;stdcall;external 'kernel32.dll' name 'GetStdHandle';
+Function GetStdHandle(N:LongWord):PtrUInt;stdcall;
+  external 'kernel32.dll' name 'GetStdHandle';
 Function GetConsoleMode(H:PtrUInt;Var Mode:LongWord):LongInt;stdcall;external
   'kernel32.dll' name 'GetConsoleMode';
 Function SetConsoleMode(H:PtrUInt;Mode:LongWord):LongInt;stdcall;external
   'kernel32.dll' name 'SetConsoleMode';
-Function ShellExecuteA(Wnd:PtrUInt;Op,FileName,Params,Dir:PChar;Show:LongInt):PtrUInt;
+Function ShellExecuteA(Wnd:PtrUInt;Op,FileName,Params,Dir:PChar;
+  Show:LongInt):PtrUInt;
  stdcall;external 'shell32.dll' name 'ShellExecuteA';
 {$ENDIF}
 
@@ -2164,9 +2224,13 @@ Var
 Procedure OptG;
 Begin
  GlobalFrom:=ONum;
- Opt('config','c','string','Config file (default is $HOME/.config/.jira/.config.yml)@@Fichier de configuration (d'+#130+'faut : $HOME/.config/.jira/.config.yml)');
+ Opt('config','c','string','Config file (default is $HOME/.config/.jira/.confi'+
+   'g.yml)@@Fichier de configuration (d'+#130+'faut : $HOME/.config/.jira/.con'+
+   'fig.yml)');
  Opt('debug','','','Turn on debug output@@Active la sortie de d'+#130+'bogage');
- Opt('project','p','string','Jira project to look into (defaults to project in the config file)@@Projet Jira '+#133+' utiliser (d'+#130+'faut : projet du fichier de configuration)');
+ Opt('project','p','string','Jira project to look into (defaults to project '+
+   'in the config file)@@Projet Jira '+#133+' utiliser (d'+#130+
+   'faut : projet du fichier de configuration)');
 End;
 
 Procedure PrintCmdHelp;
@@ -2177,7 +2241,8 @@ Var
 Begin
  D:=DescOf(CmdPath);
  If D<>'' Then WriteLn(D);
- If CmdLongDesc<>'' Then Begin If D<>'' Then WriteLn;WriteLn(Tx(CmdLongDesc));End;
+ If CmdLongDesc<>'' Then Begin If D<>'' Then WriteLn;WriteLn(Tx(CmdLongDesc));
+   End;
  WriteLn;
  WriteLn(Lg('Usage:','Utilisation :'));
  WriteLn('  jira ',CmdPath,IfThen_(CmdUsage<>'',' '+CmdUsage,''),' [flags]');
@@ -2214,7 +2279,8 @@ Begin
   If K=0 Then Begin
    WriteLn;
    WriteLn(Lg('Flags:','Options :'));
-   WriteLn('  ',PadR('-h, --help',W),'   ',Lg('Help for ','Aide de '),Copy(CmdPath,LastDelimPos(CmdPath)+1,Length(CmdPath)));
+   WriteLn('  ',PadR('-h, --help',W),'   ',Lg('Help for ','Aide de '),
+     Copy(CmdPath,LastDelimPos(CmdPath)+1,Length(CmdPath)));
    If W<10 Then W:=10;
   End
   Else Begin
@@ -2230,13 +2296,16 @@ Begin
    End;
  End;
  WriteLn;
- WriteLn(Lg('Use "jira ','Utilisez "jira '),CmdPath,Lg(' [command] --help" for more information about a command.',' [commande] --help" pour plus d''informations.'));
+ WriteLn(Lg('Use "jira ','Utilisez "jira '),CmdPath,Lg(' [command] --help" '+
+   'for more information about a command.',' [commande] --help" pour plus '+
+   'd''informations.'));
 End;
 
 Procedure FlagErr(Const Msg:AnsiString);
 Begin
  WriteLn(StdErr,'Error: ',Msg);
- WriteLn(StdErr,Lg('Run ''jira ','Ex'+#130+'cutez ''jira '),CmdPath,Lg(' --help'' for usage.',' --help'' pour l''aide.'));
+ WriteLn(StdErr,Lg('Run ''jira ','Ex'+#130+'cutez ''jira '),CmdPath,
+   Lg(' --help'' for usage.',' --help'' pour l''aide.'));
  Halt(1);
 End;
 
@@ -2251,7 +2320,8 @@ Var
 Begin
  FindOpt:=-1;
  For I:=0 to ONum-1 do
-  If(IsShort and(ODef[I].Short=Name))or((not IsShort)and(ODef[I].Long=Name))Then Begin
+  If(IsShort and(ODef[I].Short=Name))or((not IsShort)and(ODef[I].Long=Name))Then
+    Begin
    FindOpt:=I;Exit;
   End;
 End;
@@ -2259,7 +2329,8 @@ End;
 Procedure SetOptVal(K:LongInt;Const V:AnsiString);
 Begin
  OSet[K]:=True;
- If(not ODef[K].Multi)and(OVals[K].N>0)Then OVals[K].A[0]:=V Else SAdd(OVals[K],V);
+ If(not ODef[K].Multi)and(OVals[K].N>0)Then OVals[K].A[0]:=V Else SAdd(OVals[K],
+   V);
 End;
 
 Procedure ParseArgs(First:LongInt);
@@ -2275,7 +2346,8 @@ Begin
   A:=ParamStr(I);
   If Rest or((StopAfter>0)and(PosArgs.N>=StopAfter))Then SAdd(PosArgs,A)
   Else If A='--' Then Rest:=True
-  Else If((A='-h')and(FindOpt('h',True)<0))or(A='--help')or(A='/?')Then Begin PrintCmdHelp;Halt(0);End
+  Else If((A='-h')and(FindOpt('h',True)<0))or(A='--help')or(A='/?')Then
+    Begin PrintCmdHelp;Halt(0);End
   Else If StartsWith(A,'--')Then Begin
    Nm:=Copy(A,3,Length(A));V:='';
    P:=Pos('=',Nm);
@@ -2286,8 +2358,10 @@ Begin
     If P>0 Then Begin
      If LoStr(V)='false' Then OSet[K]:=False
      Else If LoStr(V)='true' Then OSet[K]:=True
-     Else FlagErr(Lg('invalid argument "'+V+'" for "--'+Nm+'" flag: strconv.ParseBool: parsing "'+V+
-       '": invalid syntax','argument invalide "'+V+'" pour l''option "--'+Nm+'"'));
+     Else FlagErr(Lg('invalid argument "'+V+'" for "--'+Nm+
+       '" flag: strconv.ParseBool: parsing "'+V+
+       '": invalid syntax','argument invalide "'+V+'" pour l''option "--'+Nm+
+         '"'));
     End
     Else OSet[K]:=True;
    End
@@ -2295,8 +2369,10 @@ Begin
    Else Begin
     If P=0 Then Begin
      If I>=ParamCount Then Begin
-      If Nm='json' Then Begin JsonListing:=True;OSet[K]:=True;Inc(I);Continue;End;
-      FlagErr(Lg('flag needs an argument: --','l''option requiert un argument : --')+Nm);
+      If Nm='json' Then Begin JsonListing:=True;OSet[K]:=True;Inc(I);Continue;
+        End;
+      FlagErr(Lg('flag needs an argument: --','l''option requiert un argument '+
+        ': --')+Nm);
      End;
      Inc(I);V:=ParamStr(I);
     End;
@@ -2308,12 +2384,14 @@ Begin
    While J<=Length(A)do Begin
     Nm:=Copy(A,J,1);
     K:=FindOpt(Nm,True);
-    If K<0 Then FlagErr(Lg('unknown shorthand flag: ''','option courte inconnue : ''')+Nm+''' in '+A);
+    If K<0 Then FlagErr(Lg('unknown shorthand flag: ''',
+      'option courte inconnue : ''')+Nm+''' in '+A);
     If ODef[K].Meta='' Then OSet[K]:=True
     Else Begin
      If J<Length(A)Then V:=Copy(A,J+1,Length(A))
      Else Begin
-      If I>=ParamCount Then FlagErr(Lg('flag needs an argument: ''','l''option requiert un argument : ''')+
+      If I>=ParamCount Then FlagErr(Lg('flag needs an argument: ''',
+        'l''option requiert un argument : ''')+
         Nm+''' in -'+Nm);
       Inc(I);V:=ParamStr(I);
      End;
@@ -2338,12 +2416,16 @@ End;
 Procedure NeedArgs(Min,Max:LongInt);
 Begin
  If PosArgs.N<Min Then Begin
-  If Min=Max Then FlagErr('accepts '+IStr(Min)+' arg(s), received '+IStr(PosArgs.N))
-  Else FlagErr('requires at least '+IStr(Min)+' arg(s), only received '+IStr(PosArgs.N));
+  If Min=Max Then FlagErr('accepts '+IStr(Min)+' arg(s), received '+
+    IStr(PosArgs.N))
+  Else FlagErr('requires at least '+IStr(Min)+' arg(s), only received '+
+    IStr(PosArgs.N));
  End;
  If(Max>=0)and(PosArgs.N>Max)Then Begin
-  If Min=Max Then FlagErr('accepts '+IStr(Min)+' arg(s), received '+IStr(PosArgs.N))
-  Else FlagErr('accepts at most '+IStr(Max)+' arg(s), received '+IStr(PosArgs.N));
+  If Min=Max Then FlagErr('accepts '+IStr(Min)+' arg(s), received '+
+    IStr(PosArgs.N))
+  Else FlagErr('accepts at most '+IStr(Max)+' arg(s), received '+
+    IStr(PosArgs.N));
  End;
 End;
 
@@ -2375,7 +2457,8 @@ Var
 Begin
  If OptHas(Long)Then Begin
   V:=ToInt(OptGet(Long),-999999999);
-  If V=-999999999 Then FlagErr('invalid argument "'+OptGet(Long)+'" for "--'+Long+
+  If V=-999999999 Then FlagErr('invalid argument "'+OptGet(Long)+'" for "--'+
+    Long+
     '" flag: strconv.ParseInt: parsing "'+OptGet(Long)+'": invalid syntax');
   OptInt:=V;
  End
@@ -2414,12 +2497,14 @@ End;
 Procedure Excl(Const A,B:AnsiString);
 Begin
  If OptHas(A)and OptHas(B)Then
-   Die2(Lg('specify only one of `--'+A+'` or `--'+B+'`','sp'+#130+'cifiez seulement `--'+A+'` ou `--'+B+'`'),1);
+   Die2(Lg('specify only one of `--'+A+'` or `--'+B+'`',
+     'sp'+#130+'cifiez seulement `--'+A+'` ou `--'+B+'`'),1);
 End;
 
 Procedure MustFlag(Const A:AnsiString);
 Begin
- If not OptHas(A)Then Die2(Lg('required flag(s) "'+A+'" not set','option(s) obligatoire(s) "'+A+'" non d'+
+ If not OptHas(A)Then Die2(Lg('required flag(s) "'+A+'" not set',
+   'option(s) obligatoire(s) "'+A+'" non d'+
    ''+#130+'finie(s)'),1);
 End;
 { ------------------------------------------------------------------ }
@@ -2481,7 +2566,8 @@ Begin
 End;
 
 { execute et capture la sortie standard (et l'erreur si Both) }
-Function RunCapture(Const Cmd:AnsiString;Var Output:AnsiString;Both:Boolean):LongInt;
+Function RunCapture(Const Cmd:AnsiString;Var Output:AnsiString;
+  Both:Boolean):LongInt;
 Var
  F:AnsiString;
 Begin
@@ -2519,14 +2605,16 @@ Begin
  {$IFDEF WINDOWS}
  ShellExecuteA(0,'open',PChar(Url),Nil,Nil,1);
  {$ELSE}
- If WhichCmd('xdg-open')<>'' Then RunShell('xdg-open '+Q(Url)+' >/dev/null 2>&1')
+ If WhichCmd('xdg-open')<>'' Then RunShell('xdg-open '+Q(Url)+
+   ' >/dev/null 2>&1')
  Else If WhichCmd('open')<>'' Then RunShell('open '+Q(Url))
  Else If WhichCmd('wslview')<>'' Then RunShell('wslview '+Q(Url))
  Else WriteLn(StdErr,'could not find a browser to open ',Url);
  {$ENDIF}
 End;
 
-{ ouvre l'editeur sur un fichier temporaire contenant Init ; renvoie le nouveau texte }
+{ ouvre l'editeur sur un fichier temporaire contenant Init ; renvoie le nouveau
+  texte }
 Function EditText(Const Init,Ext:AnsiString):AnsiString;
 Var
  Ed,F,S:AnsiString;
@@ -2541,7 +2629,8 @@ Begin
  {$ENDIF}
  F:=TmpFile(Ext);
  WriteAll(F,Init);
- If RunShell(Ed+' '+Q(F))<>0 Then Begin DelFile(F);Die('failed to run editor: '+Ed);End;
+ If RunShell(Ed+' '+Q(F))<>0 Then Begin DelFile(F);
+   Die('failed to run editor: '+Ed);End;
  If not ReadAll(F,S)Then S:='';
  DelFile(F);
  EditText:=ReplaceAll(S,#13,'');
@@ -2572,7 +2661,8 @@ Function YamlQ(Const S:AnsiString):AnsiString;
 Var
  Bad:Boolean;
 Begin
- Bad:=(S='')or(S[1]in[' ','!','*','&','%','@','`','-','?','#',',','[',']','{','}','>','|','''','"'])
+ Bad:=(S='')or(S[1]in[' ','!','*','&','%','@','`','-','?','#',',','[',']','{',
+   '}','>','|','''','"'])
    or(S[Length(S)]=' ')or(Pos(': ',S)>0)or(Pos(' #',S)>0)or(S[Length(S)]=':');
  If(S='true')or(S='false')or(S='null')or(S='~')Then Bad:=True;
  If Bad Then YamlQ:=''''+ReplaceAll(S,'''','''''')+'''' Else YamlQ:=S;
@@ -2610,7 +2700,8 @@ Begin
     P:=C+2;
     Val:=TrimStr(Copy(Ln,P+1,Length(Ln)));
    End
-   Else Begin Key:=YamlUnq(Copy(Ln,1,P-1));Val:=TrimStr(Copy(Ln,P+1,Length(Ln)));End;
+   Else Begin Key:=YamlUnq(Copy(Ln,1,P-1));Val:=TrimStr(Copy(Ln,P+1,
+     Length(Ln)));End;
   End
   Else Begin
    Key:=TrimStr(Copy(Ln,1,P-1));
@@ -2622,7 +2713,8 @@ Begin
   Full:=Full+Key;
   If Val='' Then Begin
    If Sp<16 Then Begin Stk[Sp]:=Key;StkInd[Sp]:=Ind;Inc(Sp);End;
-   If(I+1>=L.N)or(Pos(':',L.A[I+1])=0)Then Begin SAdd(Y.K,Full);SAdd(Y.V,'');End;
+   If(I+1>=L.N)or(Pos(':',L.A[I+1])=0)Then Begin SAdd(Y.K,Full);SAdd(Y.V,'');
+     End;
   End
   Else Begin
    SAdd(Y.K,Full);SAdd(Y.V,YamlUnq(Val));
@@ -2670,7 +2762,8 @@ Begin
  End;
  If Best<0 Then Begin SAdd(Y.K,Key);SAdd(Y.V,Val);Exit;End;
  SAdd(Y.K,'');SAdd(Y.V,'');
- For J:=Y.K.N-1 downto Best+2 do Begin Y.K.A[J]:=Y.K.A[J-1];Y.V.A[J]:=Y.V.A[J-1];End;
+ For J:=Y.K.N-1 downto Best+2 do Begin Y.K.A[J]:=Y.K.A[J-1];
+   Y.V.A[J]:=Y.V.A[J-1];End;
  Y.K.A[Best+1]:=Key;Y.V.A[Best+1]:=Val;
 End;
 
@@ -2714,7 +2807,8 @@ Begin
  For I:=0 to Y.K.N-1 do Begin
   SplitStr(Y.K.A[I],'|',Seg);
   Depth:=0;
-  While(Depth<Seg.N-1)and(Depth<PSeg.N-1)and(Seg.A[Depth]=PSeg.A[Depth])do Inc(Depth);
+  While(Depth<Seg.N-1)and(Depth<PSeg.N-1)and(Seg.A[Depth]=PSeg.A[Depth])do
+    Inc(Depth);
   For J:=Depth to Seg.N-2 do
     BufAdd(B,StringOfChar(' ',J*4)+YamlQ(Seg.A[J])+':'#10);
   BufAdd(B,StringOfChar(' ',(Seg.N-1)*4)+YamlQ(Seg.A[Seg.N-1])+':');
@@ -2751,7 +2845,8 @@ End;
 Function StripSlash(Const S:AnsiString):AnsiString;
 Begin
  StripSlash:=S;
- While(StripSlash<>'')and(StripSlash[Length(StripSlash)]='/')do Delete(StripSlash,Length(StripSlash),1);
+ While(StripSlash<>'')and(StripSlash[Length(StripSlash)]='/')do
+   Delete(StripSlash,Length(StripSlash),1);
 End;
 
 Function NetrcFile:AnsiString;
@@ -2877,8 +2972,10 @@ Var
 Begin
  Tk:=ApiToken;
  If Tk='' Then Begin
-  WriteLn(StdErr,Lg('Error: missing API token. Export it with:  export JIRA_API_TOKEN=<token>',
-    'Erreur : jeton d''API manquant. D'+#130+'finissez-le avec :  export JIRA_API_TOKEN=<jeton>'));
+  WriteLn(StdErr,Lg('Error: missing API token. Export it with:  export '+
+    'JIRA_API_TOKEN=<token>',
+    'Erreur : jeton d''API manquant. D'+#130+'finissez-le avec :  export '+
+      'JIRA_API_TOKEN=<jeton>'));
   Halt(1);
  End;
  If(JAuth='bearer')or(JLogin='')Then AuthValue:='Bearer '+Tk
@@ -2888,8 +2985,11 @@ End;
 Procedure RequireConfig;
 Begin
  If JServer='' Then Begin
-  WriteLn(StdErr,Lg('Missing configuration file.','Fichier de configuration manquant.'));
-  WriteLn(StdErr,Lg('Run ''jira init'' to generate the config.','Ex'+#130+'cutez ''jira init'' pour g'+#130+'n'+#130+'rer la configuration.'));
+  WriteLn(StdErr,Lg('Missing configuration file.','Fichier de configuration '+
+    'manquant.'));
+  WriteLn(StdErr,Lg('Run ''jira init'' to generate the config.',
+    'Ex'+#130+'cutez ''jira init'' pour g'+#130+'n'+#130+
+    'rer la configuration.'));
   Halt(1);
  End;
 End;
@@ -2898,8 +2998,10 @@ End;
 Function NeedProject:AnsiString;
 Begin
  If JProject='' Then Begin
-  WriteLn(StdErr,Lg('Error: project not set. Use -p/--project or run ''jira init''.',
-    'Erreur : projet non d'+#130+'fini. Utilisez -p/--project ou ex'+#130+'cutez ''jira init''.'));
+  WriteLn(StdErr,Lg('Error: project not set. Use -p/--project or run ''jira '+
+    'init''.',
+    'Erreur : projet non d'+#130+'fini. Utilisez -p/--project ou ex'+#130+
+      'cutez ''jira init''.'));
   Halt(1);
  End;
  NeedProject:=JProject;
@@ -2983,10 +3085,12 @@ Var
     SClear(T);
     C:=JP[X].First;
     While C>=0 do Begin
-     If JP[X].Kind=JK_OBJ Then SAdd(T,JQ(JP[C].Key)+':'+Walk(C)) Else SAdd(T,Walk(C));
+     If JP[X].Kind=JK_OBJ Then SAdd(T,JQ(JP[C].Key)+':'+Walk(C)) Else SAdd(T,
+       Walk(C));
      C:=JP[C].Next;
     End;
-    If JP[X].Kind=JK_OBJ Then Walk:='{'+JoinList(T,',')+'}' Else Walk:='['+JoinList(T,',')+']';
+    If JP[X].Kind=JK_OBJ Then Walk:='{'+JoinList(T,
+      ',')+'}' Else Walk:='['+JoinList(T,',')+']';
    End;
   End;
  End;
@@ -3009,7 +3113,8 @@ End;
 
 Function IsoToDay(Const S:AnsiString):Int64;
 Begin
- IsoToDay:=DaysFromCivil(ToInt(Copy(S,1,4),1970),ToInt(Copy(S,6,2),1),ToInt(Copy(S,9,2),1));
+ IsoToDay:=DaysFromCivil(ToInt(Copy(S,1,4),1970),ToInt(Copy(S,6,2),1),
+   ToInt(Copy(S,9,2),1));
 End;
 
 Function DayToIso(D:Int64):AnsiString;
@@ -3021,12 +3126,14 @@ End;
 Function DateCell(Const Iso:AnsiString):AnsiString;
 Begin
  If Length(Iso)<10 Then Begin DateCell:=Iso;Exit;End;
- If Length(Iso)>=19 Then DateCell:=Copy(Iso,1,10)+' '+Copy(Iso,12,8) Else DateCell:=Copy(Iso,1,10);
+ If Length(Iso)>=19 Then DateCell:=Copy(Iso,1,10)+' '+Copy(Iso,12,
+   8) Else DateCell:=Copy(Iso,1,10);
 End;
 
 Const
  DayNames:Array[0..6]of AnsiString=('Thu','Fri','Sat','Sun','Mon','Tue','Wed');
- MonNames:Array[1..12]of AnsiString=('Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec');
+ MonNames:Array[1..12]of AnsiString=('Jan','Feb','Mar','Apr','May','Jun','Jul',
+   'Aug','Sep','Oct','Nov','Dec');
 
 { "Thu, 02 May 24" }
 Function DateShort(Const Iso:AnsiString):AnsiString;
@@ -3040,7 +3147,8 @@ Begin
  If(Y=0)or(M<1)or(M>12)Then Exit;
  Z:=DaysFromCivil(Y,M,D);
  Z:=((Z mod 7)+7)mod 7;
- DateShort:=DayNames[Z]+', '+Copy('0'+IStr(D),Length(IStr(D)),2)+' '+MonNames[M]+' '+Copy(IStr(Y),3,2);
+ DateShort:=DayNames[Z]+', '+Copy('0'+IStr(D),Length(IStr(D)),
+   2)+' '+MonNames[M]+' '+Copy(IStr(Y),3,2);
 End;
 
 { date de depart d'un worklog : "2024-05-06T07:08:09.000+0000" }
@@ -3049,7 +3157,8 @@ Var
  T:AnsiString;
 Begin
  T:=TrimStr(S);
- If T='' Then Begin WorklogDate:=Copy(EpochToIso(NowEpoch),1,19)+'.000+0000';Exit;End;
+ If T='' Then Begin WorklogDate:=Copy(EpochToIso(NowEpoch),1,19)+'.000+0000';
+   Exit;End;
  T:=ReplaceAll(T,' ','T');
  If Length(T)=10 Then T:=T+'T00:00:00';
  If Length(T)=16 Then T:=T+':00';
@@ -3135,13 +3244,15 @@ Begin
   E:=JGet(J,'errors');
   If(E>=0)and(JP[E].Kind=JK_OBJ)Then Begin
    C:=JP[E].First;
-   While C>=0 do Begin Msg:=Msg+#10'  '+JP[C].Key+': '+JTxt(C);C:=JP[C].Next;End;
+   While C>=0 do Begin Msg:=Msg+#10'  '+JP[C].Key+': '+JTxt(C);C:=JP[C].Next;
+     End;
   End;
   If(Msg='')and(JS(J,'message')<>'')Then Msg:=#10'  '+JS(J,'message');
  End;
  If Msg='' Then Msg:=#10'  '+ReasonOf(R.Status);
  ErrText:='Error: HTTP '+IStr(R.Status)+' ('+R.Url+')'+Msg;
- If R.Status=401 Then ErrText:=ErrText+#10+Lg('Check your login and API token (JIRA_API_TOKEN).',
+ If R.Status=401 Then ErrText:=ErrText+#10+Lg('Check your login and API token '+
+   '(JIRA_API_TOKEN).',
    'V'+#130+'rifiez votre identifiant et votre jeton d''API (JIRA_API_TOKEN).');
 End;
 
@@ -3151,7 +3262,8 @@ Begin
  If not ApiOk(R)Then Die(ErrText(R));
 End;
 
-{ requete obligatoire dont le corps est du JSON : renvoie la racine (-1 si corps vide) }
+{ requete obligatoire dont le corps est du JSON : renvoie la racine (-1 si corps
+  vide) }
 Function ApiJ(Const Method,Path,Body:AnsiString):LongInt;
 Var
  R:THttpReq;
@@ -3221,7 +3333,8 @@ Var
 Begin
  If G.N>=Length(G.Rows)Then SetLength(G.Rows,Length(G.Rows)*2+16);
  SClear(G.Rows[G.N]);
- For I:=0 to Row.N-1 do SAdd(G.Rows[G.N],ReplaceAll(ReplaceAll(Row.A[I],#13,''),#10,' '));
+ For I:=0 to Row.N-1 do SAdd(G.Rows[G.N],ReplaceAll(ReplaceAll(Row.A[I],#13,''),
+   #10,' '));
  Inc(G.N);
 End;
 
@@ -3245,7 +3358,8 @@ Begin
  If GridFmt=1 Then Begin
   If not GridNoHead Then Begin
    Line:='';
-   For J:=0 to Cols-1 do Begin If J>0 Then Line:=Line+Dl;Line:=Line+G.Head.A[J];End;
+   For J:=0 to Cols-1 do Begin If J>0 Then Line:=Line+Dl;Line:=Line+G.Head.A[J];
+     End;
    WriteLn(Line);
   End;
   For I:=0 to G.N-1 do Begin
@@ -3262,7 +3376,8 @@ Begin
   If Dl=#9 Then Dl:=',';
   If not GridNoHead Then Begin
    Line:='';
-   For J:=0 to Cols-1 do Begin If J>0 Then Line:=Line+Dl;Line:=Line+CsvCell(G.Head.A[J]);End;
+   For J:=0 to Cols-1 do Begin If J>0 Then Line:=Line+Dl;
+     Line:=Line+CsvCell(G.Head.A[J]);End;
    WriteLn(Line);
   End;
   For I:=0 to G.N-1 do Begin
@@ -3281,7 +3396,8 @@ Begin
  End;
  For I:=0 to G.N-1 do
   For J:=0 to Cols-1 do
-   If(J<G.Rows[I].N)and(DispLen(G.Rows[I].A[J])>W[J])Then W[J]:=DispLen(G.Rows[I].A[J]);
+   If(J<G.Rows[I].N)and(DispLen(G.Rows[I].A[J])>W[J])Then W[J]:=
+     DispLen(G.Rows[I].A[J]);
  If (not GridNoTrunc)and OutTTY Then
   Repeat
    Tot:=(Cols-1)*2;Big:=0;
@@ -3351,13 +3467,16 @@ Begin
   End;
   If(Copy(S,I,2)='**')or(Copy(S,I,2)='__')Then Begin
    E:=FindStr(S,Copy(S,I,2),I+2);
-   If E>0 Then Begin R:=R+'*'+MdInline(Copy(S,I+2,E-I-2))+'*';I:=E+2;Continue;End;
+   If E>0 Then Begin R:=R+'*'+MdInline(Copy(S,I+2,E-I-2))+'*';I:=E+2;Continue;
+     End;
   End;
   If Copy(S,I,2)='~~' Then Begin
    E:=FindStr(S,'~~',I+2);
-   If E>0 Then Begin R:=R+'-'+MdInline(Copy(S,I+2,E-I-2))+'-';I:=E+2;Continue;End;
+   If E>0 Then Begin R:=R+'-'+MdInline(Copy(S,I+2,E-I-2))+'-';I:=E+2;Continue;
+     End;
   End;
-  If((S[I]='*')or(S[I]='_'))and(I<Length(S))and(S[I+1]<>' ')and(S[I+1]<>S[I])Then Begin
+  If((S[I]='*')or(S[I]='_'))and(I<Length(S))and(S[I+1]<>' ')and(S[I+1]<>S[I])
+    Then Begin
    E:=FindStr(S,S[I],I+1);
    If(E>I+1)and(S[E-1]<>' ')and((I=1)or(S[I-1]=' '))Then Begin
     R:=R+'_'+MdInline(Copy(S,I+1,E-I-1))+'_';I:=E+1;Continue;
@@ -3384,7 +3503,8 @@ Begin
   T:=TrimStr(Ln);
   If Copy(T,1,3)='```' Then Begin
    If InCode Then BufAdd(B,'{code}') Else Begin
-    If Length(T)>3 Then BufAdd(B,'{code:'+Copy(T,4,Length(T))+'}') Else BufAdd(B,'{code}');
+    If Length(T)>3 Then BufAdd(B,'{code:'+Copy(T,4,
+      Length(T))+'}') Else BufAdd(B,'{code}');
    End;
    InCode:=not InCode;
   End
@@ -3401,7 +3521,8 @@ Begin
     Lv:=K div 2+1;
     BufAdd(B,StringOfChar('*',Lv)+' '+MdInline(Copy(T,3,Length(T))));
    End
-   Else If(Length(T)>2)and(T[1]in['0'..'9'])and(Pos('. ',T)>0)and(Pos('. ',T)<=4)Then
+   Else If(Length(T)>2)and(T[1]in['0'..'9'])and(Pos('. ',T)>0)and(Pos('. ',
+     T)<=4)Then
      BufAdd(B,'# '+MdInline(Copy(T,Pos('. ',T)+2,Length(T))))
    Else If Copy(T,1,2)='> ' Then BufAdd(B,'bq. '+MdInline(Copy(T,3,Length(T))))
    Else If(T='---')or(T='***')Then BufAdd(B,'----')
@@ -3433,18 +3554,21 @@ Begin
    If E>0 Then Begin
     Inner:=Copy(S,I+1,E-I-1);
     P:=Pos('|',Inner);
-    If P>0 Then R:=R+'['+Copy(Inner,1,P-1)+']('+Copy(Inner,P+1,Length(Inner))+')'
+    If P>0 Then R:=R+'['+Copy(Inner,1,P-1)+']('+Copy(Inner,P+1,
+      Length(Inner))+')'
     Else R:=R+'['+Inner+']';
     I:=E+1;Continue;
    End;
   End;
   If(S[I]='*')and WordStart(I)and(I<Length(S))and(S[I+1]<>' ')Then Begin
    E:=FindStr(S,'*',I+1);
-   If(E>I+1)and(S[E-1]<>' ')Then Begin R:=R+'**'+WikiInline(Copy(S,I+1,E-I-1))+'**';I:=E+1;Continue;End;
+   If(E>I+1)and(S[E-1]<>' ')Then Begin R:=R+'**'+WikiInline(Copy(S,I+1,
+     E-I-1))+'**';I:=E+1;Continue;End;
   End;
   If(S[I]='_')and WordStart(I)and(I<Length(S))and(S[I+1]<>' ')Then Begin
    E:=FindStr(S,'_',I+1);
-   If(E>I+1)and(S[E-1]<>' ')Then Begin R:=R+'_'+WikiInline(Copy(S,I+1,E-I-1))+'_';I:=E+1;Continue;End;
+   If(E>I+1)and(S[E-1]<>' ')Then Begin R:=R+'_'+WikiInline(Copy(S,I+1,
+     E-I-1))+'_';I:=E+1;Continue;End;
   End;
   R:=R+S[I];Inc(I);
  End;
@@ -3464,7 +3588,8 @@ Begin
  InCode:=False;
  For I:=0 to L.N-1 do Begin
   Ln:=L.A[I];
-  If(Copy(Ln,1,6)='{code}')or(Copy(Ln,1,6)='{code:')or(Copy(Ln,1,10)='{noformat}')Then Begin
+  If(Copy(Ln,1,6)='{code}')or(Copy(Ln,1,6)='{code:')or(Copy(Ln,1,
+    10)='{noformat}')Then Begin
    If InCode Then BufAdd(B,'```') Else Begin
     If Copy(Ln,1,6)='{code:' Then Begin
      K:=Pos('}',Ln);
@@ -3475,17 +3600,26 @@ Begin
    InCode:=not InCode;
   End
   Else If InCode Then BufAdd(B,Ln)
-  Else If(Length(Ln)>3)and(Ln[1]='h')and(Ln[2]in['1'..'6'])and(Copy(Ln,3,2)='. ')Then
-    BufAdd(B,StringOfChar('#',Ord(Ln[2])-48)+' '+WikiInline(Copy(Ln,5,Length(Ln))))
-  Else If(Length(Ln)>1)and(Ln[1]='*')and(Pos(' ',Ln)>1)and(Pos(' ',Ln)<=4)and(Copy(Ln,1,Pos(' ',Ln)-1)=StringOfChar('*',Pos(' ',Ln)-1))Then Begin
+  Else If(Length(Ln)>3)and(Ln[1]='h')and(Ln[2]in['1'..'6'])and(Copy(Ln,3,
+    2)='. ')Then
+    BufAdd(B,StringOfChar('#',Ord(Ln[2])-48)+' '+WikiInline(Copy(Ln,5,
+      Length(Ln))))
+  Else If(Length(Ln)>1)and(Ln[1]='*')and(Pos(' ',Ln)>1)and(Pos(' ',
+    Ln)<=4)and(Copy(Ln,1,Pos(' ',Ln)-1)=StringOfChar('*',Pos(' ',
+    Ln)-1))Then Begin
     K:=Pos(' ',Ln)-1;
-    BufAdd(B,StringOfChar(' ',(K-1)*2)+'- '+WikiInline(Copy(Ln,K+2,Length(Ln))));
+    BufAdd(B,StringOfChar(' ',(K-1)*2)+'- '+WikiInline(Copy(Ln,K+2,
+      Length(Ln))));
   End
-  Else If(Length(Ln)>1)and(Ln[1]='#')and(Pos(' ',Ln)>1)and(Pos(' ',Ln)<=4)and(Copy(Ln,1,Pos(' ',Ln)-1)=StringOfChar('#',Pos(' ',Ln)-1))Then Begin
+  Else If(Length(Ln)>1)and(Ln[1]='#')and(Pos(' ',Ln)>1)and(Pos(' ',
+    Ln)<=4)and(Copy(Ln,1,Pos(' ',Ln)-1)=StringOfChar('#',Pos(' ',
+    Ln)-1))Then Begin
     K:=Pos(' ',Ln)-1;
-    BufAdd(B,StringOfChar(' ',(K-1)*2)+'1. '+WikiInline(Copy(Ln,K+2,Length(Ln))));
+    BufAdd(B,StringOfChar(' ',(K-1)*2)+'1. '+WikiInline(Copy(Ln,K+2,
+      Length(Ln))));
   End
-  Else If Copy(Ln,1,4)='bq. ' Then BufAdd(B,'> '+WikiInline(Copy(Ln,5,Length(Ln))))
+  Else If Copy(Ln,1,4)='bq. ' Then BufAdd(B,'> '+WikiInline(Copy(Ln,5,
+    Length(Ln))))
   Else If Ln='----' Then BufAdd(B,'---')
   Else BufAdd(B,WikiInline(Ln));
   If I<L.N-1 Then BufAdd(B,#10);
@@ -3562,7 +3696,8 @@ Var
  L:AnsiString;
  B:TBuf;
 Begin
- WriteLn(StdErr,'? ',Q_,Lg(' (finish with an empty line)',' (terminez par une ligne vide)'));
+ WriteLn(StdErr,'? ',Q_,Lg(' (finish with an empty line)',
+   ' (terminez par une ligne vide)'));
  BufClear(B);
  Repeat
   L:=ReadLine_;
@@ -3580,20 +3715,24 @@ Var
  Dig:Boolean;
 Begin
  S:=TrimStr(S_);
- If S='' Then Die(Lg('Error: issue key is required','Erreur : la cl'+#130+' du ticket est obligatoire'));
+ If S='' Then Die(Lg('Error: issue key is required','Erreur : la cl'+#130+' '+
+   'du ticket est obligatoire'));
  If Pos('/browse/',S)>0 Then S:=Copy(S,Pos('/browse/',S)+8,Length(S));
  Dig:=True;
  For I:=1 to Length(S)do If not(S[I]in['0'..'9'])Then Dig:=False;
  If Dig Then Begin
-  If JProject='' Then Die(Lg('Error: project not set, use a full key such as PROJ-'+S,
-    'Erreur : projet non d'+#130+'fini, utilisez une cl'+#130+' compl'+#138+'te comme PROJ-'+S));
+  If JProject='' Then Die(Lg('Error: project not set, use a full key such as '+
+    'PROJ-'+S,
+    'Erreur : projet non d'+#130+'fini, utilisez une cl'+#130+' compl'+#138+
+      'te comme PROJ-'+S));
   IssueKey:=JProject+'-'+S;
  End
  Else IssueKey:=UpStr(S);
 End;
 
 { liste de noms d'un tableau JSON : [{"name":..}] }
-Function NamesOf(A:LongInt;Const Key:AnsiString;Const Sep:AnsiString):AnsiString;
+Function NamesOf(A:LongInt;Const Key:AnsiString;
+  Const Sep:AnsiString):AnsiString;
 Var
  C:LongInt;
  L:TSList;
@@ -3621,7 +3760,8 @@ End;
 Var
  LastUserName:AnsiString;
 
-{ objet JSON de l'utilisateur pour un champ assignee ; 'null' si Q = x ; '-1' pour defaut }
+{ objet JSON de l'utilisateur pour un champ assignee ; 'null' si Q = x ; '-1'
+  pour defaut }
 Function UserObj(Const Q_,Proj:AnsiString):AnsiString;
 Var
  Q_s:AnsiString;
@@ -3645,12 +3785,14 @@ Begin
   C:=JP[J].First;
   While C>=0 do Begin
    If Pick<0 Then Pick:=C;
-   If(LoStr(JS(C,'displayName'))=LoStr(Q_s))or(LoStr(JS(C,'emailAddress'))=LoStr(Q_s))
+   If(LoStr(JS(C,'displayName'))=LoStr(Q_s))or(LoStr(JS(C,
+     'emailAddress'))=LoStr(Q_s))
      or(LoStr(JS(C,'name'))=LoStr(Q_s))Then Begin Pick:=C;Break;End;
    C:=JP[C].Next;
   End;
  End;
- If Pick<0 Then Die(Lg('Error: user not found: ','Erreur : utilisateur introuvable : ')+Q_s);
+ If Pick<0 Then Die(Lg('Error: user not found: ','Erreur : utilisateur '+
+   'introuvable : ')+Q_s);
  LastUserName:=JS(Pick,'displayName');
  If IsCloud Then Idf:='{"accountId":'+JQ(JS(Pick,'accountId'))+'}'
  Else Begin
@@ -3665,7 +3807,8 @@ End;
 { ------------------------------------------------------------------ }
 
 Const
- BaseFields='summary,issuetype,status,assignee,reporter,priority,resolution,created,updated,labels,'+
+ BaseFields='summary,issuetype,status,assignee,reporter,priority,resolution,cr'+
+   'eated,updated,labels,'+
    'components,fixVersions,versions,parent,duedate';
 
 Function SearchFields:AnsiString;
@@ -3674,8 +3817,10 @@ Begin
  If JEpicName<>'' Then SearchFields:=SearchFields+','+JEpicName;
 End;
 
-{ recupere les tickets [From, From+Limit) ; Agile=True : endpoint agile (startAt/total) }
-Procedure SearchIssues(Const Base,Jql:AnsiString;Agile_:Boolean;From,Limit:LongInt;Var L:TIList;Var Total:LongInt);
+{ recupere les tickets [From, From+Limit) ; Agile=True : endpoint agile
+  (startAt/total) }
+Procedure SearchIssues(Const Base,Jql:AnsiString;Agile_:Boolean;From,
+  Limit:LongInt;Var L:TIList;Var Total:LongInt);
 Var
  J,C,Seen,Step,StartAt:LongInt;
  Tok,Path:AnsiString;
@@ -3691,10 +3836,12 @@ Begin
   If Step>100 Then Step:=100;
   If Step<1 Then Step:=1;
   If Cloud Then Begin
-   Path:=Base+'?jql='+UrlEnc(Jql,False)+'&fields='+UrlEnc(SearchFields,False)+'&maxResults=100';
+   Path:=Base+'?jql='+UrlEnc(Jql,False)+'&fields='+UrlEnc(SearchFields,
+     False)+'&maxResults=100';
    If Tok<>'' Then Path:=Path+'&nextPageToken='+UrlEnc(Tok,False);
   End
-  Else Path:=Base+'?jql='+UrlEnc(Jql,False)+'&fields='+UrlEnc(SearchFields,False)+'&maxResults='+IStr(Step)
+  Else Path:=Base+'?jql='+UrlEnc(Jql,False)+'&fields='+UrlEnc(SearchFields,
+    False)+'&maxResults='+IStr(Step)
     +'&startAt='+IStr(StartAt);
   J:=ApiJ('GET',Path,'');
   If J<0 Then Break;
@@ -3757,7 +3904,8 @@ Begin
   If(V<>'')and(V[1]='~')Then Begin Neg:=True;Delete(V,1,1);End;
   SAdd(L,JqlQ(V));
  End;
- If Neg Then CondIn:=Field+' NOT IN ('+JoinList(L,', ')+')' Else CondIn:=Field+' IN ('+JoinList(L,', ')+')';
+ If Neg Then CondIn:=Field+' NOT IN ('+JoinList(L,
+   ', ')+')' Else CondIn:=Field+' IN ('+JoinList(L,', ')+')';
 End;
 
 { filtre de date : today, week, month, year, AAAA-MM-JJ, -1d }
@@ -3769,7 +3917,8 @@ Begin
  V:=TrimStr(V_);
  DateCond:='';
  If Op<>'=' Then Begin
-  If(V<>'')and(V[1]='-')Then DateCond:=Field+' '+Op+' '+V Else DateCond:=Field+' '+Op+' '+JqlQ(V);
+  If(V<>'')and(V[1]='-')Then DateCond:=Field+' '+Op+' '+V Else DateCond:=Field+
+    ' '+Op+' '+JqlQ(V);
   Exit;
  End;
  If V='today' Then DateCond:=Field+' >= startOfDay()'
@@ -3788,25 +3937,44 @@ End;
 Procedure OptFilters;
 Begin
  Opt('type','t','string','Filter issues by type@@Filtre les tickets par type');
- Opt('resolution','R','string','Filter issues by resolution type@@Filtre les tickets par r'+#130+'solution');
- Opt('status','s','*string','Filter issues by status@@Filtre les tickets par '+#130+'tat');
- Opt('priority','y','string','Filter issues by priority@@Filtre les tickets par priorit'+#130+'');
- Opt('reporter','r','string','Filter issues by reporter (email or display name)@@Filtre les tickets par rapporteur (courriel ou nom)');
- Opt('assignee','a','string','Filter issues by assignee (email or display name)@@Filtre les tickets par personne assign'+#130+'e (courriel ou nom)');
- Opt('component','C','string','Filter issues by component@@Filtre les tickets par composant');
- Opt('label','l','*string','Filter issues by label@@Filtre les tickets par '+#130+'tiquette');
- Opt('parent','P','string','Filter issues by parent@@Filtre les tickets par parent');
+ Opt('resolution','R','string','Filter issues by resolution type@@Filtre les '+
+   'tickets par r'+#130+'solution');
+ Opt('status','s','*string','Filter issues by status@@Filtre les tickets par '+
+   #130+'tat');
+ Opt('priority','y','string','Filter issues by priority@@Filtre les tickets '+
+   'par priorit'+#130+'');
+ Opt('reporter','r','string','Filter issues by reporter (email or display '+
+   'name)@@Filtre les tickets par rapporteur (courriel ou nom)');
+ Opt('assignee','a','string','Filter issues by assignee (email or display '+
+   'name)@@Filtre les tickets par personne assign'+#130+'e (courriel ou nom)');
+ Opt('component','C','string','Filter issues by component@@Filtre les tickets '+
+   'par composant');
+ Opt('label','l','*string','Filter issues by label@@Filtre les tickets par '+
+   #130+'tiquette');
+ Opt('parent','P','string','Filter issues by parent@@Filtre les tickets par '+
+   'parent');
  Opt('watching','w','','Issues you are watching@@Tickets que vous suivez');
- Opt('history','i','','Issues you accessed recently@@Tickets consult'+#130+'s r'+#130+'cemment');
- Opt('created','','string','Filter issues by created date (today, week, month, year, yyyy-mm-dd or period like -1d)@@Filtre par date de cr'+#130+'ation (today, week, month, year, aaaa-mm-jj ou p'+#130+'riode comme -1d)');
- Opt('updated','','string','Filter issues by updated date@@Filtre par date de mise '+#133+' jour');
- Opt('created-after','','string','Filter issues created after a date@@Tickets cr'+#130+''+#130+'s apr'+#138+'s une date');
- Opt('created-before','','string','Filter issues created before a date@@Tickets cr'+#130+''+#130+'s avant une date');
- Opt('updated-after','','string','Filter issues updated after a date@@Tickets mis '+#133+' jour apr'+#138+'s une date');
- Opt('updated-before','','string','Filter issues updated before a date@@Tickets mis '+#133+' jour avant une date');
- Opt('jql','q','string','Run this JQL query in the project context@@Ex'+#130+'cute cette requ'+#136+'te JQL dans le contexte du projet');
- Opt('order-by','','string','Field to order the list by (default "created")@@Champ de tri de la liste (d'+#130+'faut : "created")');
- Opt('reverse','','','Reverse the display order (default: DESC)@@Inverse l''ordre d''affichage (d'+#130+'faut : DESC)');
+ Opt('history','i','','Issues you accessed recently@@Tickets consult'+#130+
+   's r'+#130+'cemment');
+ Opt('created','','string','Filter issues by created date (today, week, '+
+   'month, year, yyyy-mm-dd or period like -1d)@@Filtre par date de cr'+#130+
+   'ation (today, week, month, year, aaaa-mm-jj ou p'+#130+'riode comme -1d)');
+ Opt('updated','','string','Filter issues by updated date@@Filtre par date de '+
+   'mise '+#133+' jour');
+ Opt('created-after','','string','Filter issues created after a date@@Tickets '+
+   'cr'+#130+''+#130+'s apr'+#138+'s une date');
+ Opt('created-before','','string','Filter issues created before a '+
+   'date@@Tickets cr'+#130+''+#130+'s avant une date');
+ Opt('updated-after','','string','Filter issues updated after a date@@Tickets '+
+   'mis '+#133+' jour apr'+#138+'s une date');
+ Opt('updated-before','','string','Filter issues updated before a '+
+   'date@@Tickets mis '+#133+' jour avant une date');
+ Opt('jql','q','string','Run this JQL query in the project context@@Ex'+#130+
+   'cute cette requ'+#136+'te JQL dans le contexte du projet');
+ Opt('order-by','','string','Field to order the list by (default '+
+   '"created")@@Champ de tri de la liste (d'+#130+'faut : "created")');
+ Opt('reverse','','','Reverse the display order (default: DESC)@@Inverse '+
+   'l''ordre d''affichage (d'+#130+'faut : DESC)');
 End;
 
 { assemble le JQL ; Text = texte libre ; ExtraType = type impose ('' si aucun) }
@@ -3839,17 +4007,22 @@ Begin
  If OptHas('history')Then Add('issue IN issueHistory()');
  If OptHas('created')Then Add(DateCond('created',OptGet('created'),'='));
  If OptHas('updated')Then Add(DateCond('updated',OptGet('updated'),'='));
- If OptHas('created-after')Then Add(DateCond('created',OptGet('created-after'),'>'));
- If OptHas('created-before')Then Add(DateCond('created',OptGet('created-before'),'<'));
- If OptHas('updated-after')Then Add(DateCond('updated',OptGet('updated-after'),'>'));
- If OptHas('updated-before')Then Add(DateCond('updated',OptGet('updated-before'),'<'));
+ If OptHas('created-after')Then Add(DateCond('created',OptGet('created-after'),
+   '>'));
+ If OptHas('created-before')Then Add(DateCond('created',
+   OptGet('created-before'),'<'));
+ If OptHas('updated-after')Then Add(DateCond('updated',OptGet('updated-after'),
+   '>'));
+ If OptHas('updated-before')Then Add(DateCond('updated',
+   OptGet('updated-before'),'<'));
  If Text<>'' Then Add('text ~ '+JqlQ(Text));
  Ord_:='';
  If OptHas('jql')Then Begin
   J:=OptGet('jql');
   Up:=UpStr(J);
   P:=Pos('ORDER BY',Up);
-  If P>0 Then Begin Ord_:=TrimStr(Copy(J,P+8,Length(J)));J:=TrimStr(Copy(J,1,P-1));End;
+  If P>0 Then Begin Ord_:=TrimStr(Copy(J,P+8,Length(J)));J:=TrimStr(Copy(J,1,
+    P-1));End;
   If J<>'' Then Add('('+J+')');
  End;
  If Ord_='' Then Begin
@@ -3869,14 +4042,23 @@ End;
 Procedure OptListOut(Const DefCols:AnsiString);
 Begin
  Opt('plain','','','Display output in plain mode@@Affiche en mode texte');
- Opt('raw','','','Print raw Jira API response@@Affiche la r'+#130+'ponse brute (JSON) de l''API Jira');
+ Opt('raw','','','Print raw Jira API response@@Affiche la r'+#130+
+   'ponse brute (JSON) de l''API Jira');
  Opt('csv','','','Print output in CSV format@@Affiche au format CSV');
  Opt('table','','','Display output in table view@@Affiche en tableau');
- Opt('columns','','string','Comma separated list of columns to display in the plain mode. Defaults to '+DefCols+'@@Colonnes '+#133+' afficher, s'+#130+'par'+#130+'es par des virgules. D'+#130+'faut : '+DefCols);
- Opt('delimiter','','string','Custom delimiter for plain mode (default "\t")@@S'+#130+'parateur du mode texte (d'+#130+'faut : tabulation)');
- Opt('no-headers','','','Don''t display table headers in plain mode@@N''affiche pas les en-t'+#136+'tes');
- Opt('no-truncate','','','Show all available columns in plain mode, without truncating@@N''abr'+#138+'ge pas les cellules');
- Opt('paginate','','string','Paginate the result. Max 100 at a time, ex: --paginate 20, or --paginate 10:50 (from:limit)@@Pagine le r'+#130+'sultat. Max 100 '+#133+' la fois : --paginate 20 ou --paginate 10:50 (d'+#130+'but:limite)');
+ Opt('columns','','string','Comma separated list of columns to display in the '+
+   'plain mode. Defaults to '+DefCols+'@@Colonnes '+#133+' afficher, s'+#130+
+   'par'+#130+'es par des virgules. D'+#130+'faut : '+DefCols);
+ Opt('delimiter','','string','Custom delimiter for plain mode (default "\t")@@S'
+   +#130+'parateur du mode texte (d'+#130+'faut : tabulation)');
+ Opt('no-headers','','','Don''t display table headers in plain '+
+   'mode@@N''affiche pas les en-t'+#136+'tes');
+ Opt('no-truncate','','','Show all available columns in plain mode, without '+
+   'truncating@@N''abr'+#138+'ge pas les cellules');
+ Opt('paginate','','string','Paginate the result. Max 100 at a time, ex: '+
+   '--paginate 20, or --paginate 10:50 (from:limit)@@Pagine le r'+#130+
+   'sultat. Max 100 '+#133+' la fois : --paginate 20 ou --paginate 10:50 (d'+
+   #130+'but:limite)');
 End;
 
 Procedure ListFlags;
@@ -3901,7 +4083,8 @@ Begin
  If V='' Then Exit;
  P:=Pos(':',V);
  If P=0 Then Limit:=ToInt(V,100)
- Else Begin From:=ToInt(Copy(V,1,P-1),0);Limit:=ToInt(Copy(V,P+1,Length(V)),100);End;
+ Else Begin From:=ToInt(Copy(V,1,P-1),0);Limit:=ToInt(Copy(V,P+1,Length(V)),
+   100);End;
  If Limit<1 Then Limit:=1;
  If From<0 Then From:=0;
 End;
@@ -3913,7 +4096,8 @@ Begin
  Else If Col='TYPE' Then IssueCell:=JS(N,'fields.issuetype.name')
  Else If Col='SUMMARY' Then IssueCell:=JS(N,'fields.summary')
  Else If Col='NAME' Then Begin
-  If(JEpicName<>'')and(JS(N,'fields.'+JEpicName)<>'')Then IssueCell:=JS(N,'fields.'+JEpicName)
+  If(JEpicName<>'')and(JS(N,'fields.'+JEpicName)<>'')Then IssueCell:=JS(N,
+    'fields.'+JEpicName)
   Else IssueCell:=JS(N,'fields.summary');
  End
  Else If Col='STATUS' Then IssueCell:=JS(N,'fields.status.name')
@@ -3924,17 +4108,22 @@ Begin
  Else If Col='CREATED' Then IssueCell:=DateCell(JS(N,'fields.created'))
  Else If Col='UPDATED' Then IssueCell:=DateCell(JS(N,'fields.updated'))
  Else If Col='LABELS' Then IssueCell:=NamesOf(JPath(N,'fields.labels'),'',',')
- Else If Col='COMPONENTS' Then IssueCell:=NamesOf(JPath(N,'fields.components'),'name',',')
- Else If Col='FIXVERSION' Then IssueCell:=NamesOf(JPath(N,'fields.fixVersions'),'name',',')
- Else If Col='AFFECTSVERSION' Then IssueCell:=NamesOf(JPath(N,'fields.versions'),'name',',')
+ Else If Col='COMPONENTS' Then IssueCell:=NamesOf(JPath(N,'fields.components'),
+   'name',',')
+ Else If Col='FIXVERSION' Then IssueCell:=NamesOf(JPath(N,'fields.fixVersions'),
+   'name',',')
+ Else If Col='AFFECTSVERSION' Then IssueCell:=NamesOf(JPath(N,
+   'fields.versions'),'name',',')
  Else If Col='PARENT' Then IssueCell:=JS(N,'fields.parent.key')
  Else If Col='DUEDATE' Then IssueCell:=JS(N,'fields.duedate');
 End;
 
 Function ValidCol(Const C:AnsiString):Boolean;
 Begin
- ValidCol:=(C='KEY')or(C='TYPE')or(C='SUMMARY')or(C='NAME')or(C='STATUS')or(C='ASSIGNEE')or(C='REPORTER')
-  or(C='PRIORITY')or(C='RESOLUTION')or(C='CREATED')or(C='UPDATED')or(C='LABELS')or(C='COMPONENTS')
+ ValidCol:=(C='KEY')or(C='TYPE')or(C='SUMMARY')or(C='NAME')or(C='STATUS')
+   or(C='ASSIGNEE')or(C='REPORTER')
+  or(C='PRIORITY')or(C='RESOLUTION')or(C='CREATED')or(C='UPDATED')or(C='LABELS')
+    or(C='COMPONENTS')
   or(C='FIXVERSION')or(C='AFFECTSVERSION')or(C='PARENT')or(C='DUEDATE');
 End;
 
@@ -3962,7 +4151,8 @@ Begin
  SClear(T);
  For I:=0 to Cols.N-1 do Begin
   Cols.A[I]:=TrimStr(Cols.A[I]);
-  If not ValidCol(Cols.A[I])Then Die(Lg('Error: invalid column: ','Erreur : colonne invalide : ')+Cols.A[I]);
+  If not ValidCol(Cols.A[I])Then Die(Lg('Error: invalid column: ',
+    'Erreur : colonne invalide : ')+Cols.A[I]);
  End;
  GridInit(G,Cols);
  For I:=0 to L.N-1 do Begin
@@ -3974,11 +4164,14 @@ Begin
 End;
 
 Const
- DefIssueCols='TYPE,KEY,SUMMARY,STATUS,ASSIGNEE,REPORTER,PRIORITY,RESOLUTION,CREATED,UPDATED,LABELS';
+ DefIssueCols='TYPE,KEY,SUMMARY,STATUS,ASSIGNEE,REPORTER,PRIORITY,RESOLUTION,C'+
+   'REATED,UPDATED,LABELS';
 
 Procedure NoResults;
 Begin
- If ErrTTY Then WriteLn(StdErr,Lg('No result found for given query in project "','Aucun r'+#130+'sultat pour la requ'+#136+'te dans le projet "'),JProject,'"');
+ If ErrTTY Then WriteLn(StdErr,
+   Lg('No result found for given query in project "','Aucun r'+#130+'sultat '+
+   'pour la requ'+#136+'te dans le projet "'),JProject,'"');
 End;
 { ------------------------------------------------------------------ }
 { jira issue : list, view, create, edit, ...                          }
@@ -4004,15 +4197,18 @@ Var
  Arr:TSList;
 Begin
  P:=Pos('=',KV);
- If P=0 Then Die(Lg('Error: invalid custom field "','Erreur : champ personnalis'+#130+' invalide "')+KV+'" (key=value)');
+ If P=0 Then Die(Lg('Error: invalid custom field "',
+   'Erreur : champ personnalis'+#130+' invalide "')+KV+'" (key=value)');
  Key:=TrimStr(Copy(KV,1,P-1));Val_:=Copy(KV,P+1,Length(KV));
  Fd:=-1;
  C:=JP[AllFields].First;
  While C>=0 do Begin
-  If(JS(C,'id')=Key)or(LoStr(JS(C,'name'))=LoStr(Key))Then Begin Fd:=C;Break;End;
+  If(JS(C,'id')=Key)or(LoStr(JS(C,'name'))=LoStr(Key))Then Begin Fd:=C;Break;
+    End;
   C:=JP[C].Next;
  End;
- If Fd<0 Then Die(Lg('Error: unknown field "','Erreur : champ inconnu "')+Key+'"');
+ If Fd<0 Then Die(Lg('Error: unknown field "',
+   'Erreur : champ inconnu "')+Key+'"');
  Id:=JS(Fd,'id');
  Ty:=JS(Fd,'schema.type');
  It:=JS(Fd,'schema.items');
@@ -4045,7 +4241,8 @@ Begin
   F:=OptGet('template');
   If F='-' Then BodyArg:=ReplaceAll(ReadStdin,#13,'')
   Else If ReadAll(F,S)Then BodyArg:=ReplaceAll(S,#13,'')
-  Else Die(Lg('Error: unable to read template file: ','Erreur : lecture du mod'+#138+'le impossible : ')+F);
+  Else Die(Lg('Error: unable to read template file: ',
+    'Erreur : lecture du mod'+#138+'le impossible : ')+F);
  End;
 End;
 
@@ -4053,17 +4250,30 @@ End;
 Procedure OptTicketFields(WithType:Boolean);
 Begin
  If WithType Then Opt('type','t','string','Issue type@@Type de ticket');
- Opt('summary','s','string','Issue summary or title@@R'+#130+'sum'+#130+' ou titre du ticket');
+ Opt('summary','s','string','Issue summary or title@@R'+#130+'sum'+#130+
+   ' ou titre du ticket');
  Opt('body','b','string','Issue description@@Description du ticket');
  Opt('priority','y','string','Set issue priority@@Priorit'+#130+' du ticket');
- Opt('label','l','*string','Add issue labels (prefix with - to remove, edit only)@@'+#144+'tiquettes du ticket (pr'+#130+'fixe - pour retirer, en modification)');
- Opt('component','C','*string','Add issue components (prefix with - to remove, edit only)@@Composants du ticket (pr'+#130+'fixe - pour retirer, en modification)');
- Opt('fix-version','','*string','Add fix version (prefix with - to remove, edit only)@@Version de correction (pr'+#130+'fixe - pour retirer, en modification)');
- Opt('affects-version','','*string','Add affects version (prefix with - to remove, edit only)@@Version affect'+#130+'e (pr'+#130+'fixe - pour retirer, en modification)');
+ Opt('label','l','*string','Add issue labels (prefix with - to remove, edit '+
+   'only)@@'+#144+'tiquettes du ticket (pr'+#130+'fixe - pour retirer, en '+
+   'modification)');
+ Opt('component','C','*string','Add issue components (prefix with - to '+
+   'remove, edit only)@@Composants du ticket (pr'+#130+
+   'fixe - pour retirer, en modification)');
+ Opt('fix-version','','*string','Add fix version (prefix with - to remove, '+
+   'edit only)@@Version de correction (pr'+#130+'fixe - pour retirer, en '+
+   'modification)');
+ Opt('affects-version','','*string','Add affects version (prefix with - to '+
+   'remove, edit only)@@Version affect'+#130+'e (pr'+#130+
+   'fixe - pour retirer, en modification)');
  Opt('parent','P','string','Link to a parent key@@Cl'+#130+' du ticket parent');
- Opt('custom','','*string','Set custom fields, format: key=value@@Champs personnalis'+#130+'s, format : cl'+#130+'=valeur');
- Opt('template','T','string','Path to a file to read the description from (use "-" for standard input)@@Fichier contenant la description ('+#174+' - '+#175+' pour l''entr'+#130+'e standard)');
- Opt('no-input','','','Disable prompt for non-required fields@@D'+#130+'sactive les questions interactives');
+ Opt('custom','','*string','Set custom fields, format: key=value@@Champs '+
+   'personnalis'+#130+'s, format : cl'+#130+'=valeur');
+ Opt('template','T','string','Path to a file to read the description from '+
+   '(use "-" for standard input)@@Fichier contenant la description ('+#174+
+   ' - '+#175+' pour l''entr'+#130+'e standard)');
+ Opt('no-input','','','Disable prompt for non-required fields@@D'+#130+
+   'sactive les questions interactives');
 End;
 
 Function NameList(Const Vals:TSList):AnsiString;
@@ -4076,7 +4286,8 @@ Begin
  NameList:='['+JoinList(T,',')+']';
 End;
 
-{ ajoute (ou retire, si prefixe -) des valeurs a un champ de type liste dans update }
+{ ajoute (ou retire, si prefixe -) des valeurs a un champ de type liste dans
+  update }
 Procedure ListOps(Var Upd:TSList;Const Field,Opt_:AnsiString;Named:Boolean);
 Var
  Vals,Ops:TSList;
@@ -4090,10 +4301,12 @@ Begin
   V:=Vals.A[I];
   If(V<>'')and(V[1]='-')Then Begin
    Delete(V,1,1);
-   If Named Then SAdd(Ops,'{"remove":{"name":'+JQ(V)+'}}') Else SAdd(Ops,'{"remove":'+JQ(V)+'}');
+   If Named Then SAdd(Ops,'{"remove":{"name":'+JQ(V)+'}}') Else SAdd(Ops,
+     '{"remove":'+JQ(V)+'}');
   End
   Else Begin
-   If Named Then SAdd(Ops,'{"add":{"name":'+JQ(V)+'}}') Else SAdd(Ops,'{"add":'+JQ(V)+'}');
+   If Named Then SAdd(Ops,'{"add":{"name":'+JQ(V)+'}}') Else SAdd(Ops,
+     '{"add":'+JQ(V)+'}');
   End;
  End;
  FR(Upd,Field,'['+JoinList(Ops,',')+']');
@@ -4122,7 +4335,11 @@ Var
 Begin
  CmdBegin('issue list','');
  CmdAlias('lists');CmdAlias('ls');
- CmdExample('  # List all issues in the project'#10'  jira issue list'#10#10'  # List bugs that are open'#10'  jira issue list -tBug -sOpen'#10#10'  # List unassigned issues'#10'  jira issue list -ax'#10#10'  # Run a custom JQL'#10'  jira issue list -q "created > -7d ORDER BY created DESC"');
+ CmdExample('  # List all issues in the project'#10'  jira issue list'#10#10+
+   '  # List bugs that are open'#10'  jira issue list -tBug -sOpen'#10#10+
+   '  # List unassigned issues'#10'  jira issue list -ax'#10#10+
+   '  # Run a custom JQL'#10'  jira issue list -q "created > -7d ORDER BY '+
+   'created DESC"');
  OptFilters;OptListOut(DefIssueCols);OptG;
  ParseArgs(ArgStart);
  ApplyGlobals;
@@ -4143,7 +4360,8 @@ Var
  S:AnsiString;
 Begin
  S:=LoStr(St);
- If(Pos('done',S)>0)or(Pos('closed',S)>0)or(Pos('resolved',S)>0)Then StatusEmoji:=''+#226+#156+#133+''
+ If(Pos('done',S)>0)or(Pos('closed',S)>0)or(Pos('resolved',
+   S)>0)Then StatusEmoji:=''+#226+#156+#133+''
  Else If(Pos('progress',S)>0)Then StatusEmoji:=''+#240+#159+#154+#167+''
  Else StatusEmoji:=''+#240+#159+#148+#150+'';
 End;
@@ -4156,10 +4374,13 @@ Var
 Begin
  CmdBegin('issue view','ISSUE-KEY');
  CmdAlias('show');
- CmdExample('  # View details of an issue'#10'  jira issue view ISSUE-1'#10#10'  # Show 5 recent comments'#10'  jira issue view ISSUE-1 --comments 5');
- Opt('comments','','uint','Show N comments (default 1)@@Affiche N commentaires (d'+#130+'faut : 1)');
+ CmdExample('  # View details of an issue'#10'  jira issue view ISSUE-1'#10#10+
+   '  # Show 5 recent comments'#10'  jira issue view ISSUE-1 --comments 5');
+ Opt('comments','','uint','Show N comments (default 1)@@Affiche N '+
+   'commentaires (d'+#130+'faut : 1)');
  Opt('plain','','','Display output in plain mode@@Affiche en mode texte');
- Opt('raw','','','Print raw Jira API response@@Affiche la r'+#130+'ponse brute (JSON) de l''API Jira');
+ Opt('raw','','','Print raw Jira API response@@Affiche la r'+#130+
+   'ponse brute (JSON) de l''API Jira');
  OptG;
  ParseArgs(ArgStart);
  NeedArgs(1,1);
@@ -4169,29 +4390,44 @@ Begin
  J:=ApiJ('GET',V2('/issue/'+Key+'?fields=*all'),'');
  If OptHas('raw')Then Begin JPrint(J);Exit;End;
  Wch:=0;
- If JPath(J,'fields.watches.watchCount')>=0 Then Wch:=JI(J,'fields.watches.watchCount');
+ If JPath(J,'fields.watches.watchCount')>=0 Then Wch:=JI(J,
+   'fields.watches.watchCount');
  Cm:=JPath(J,'fields.comment.comments');
  Nc:=JCnt(Cm);
- Ln:=StatusEmoji(JS(J,'fields.status.name'))+' '+JS(J,'fields.status.name')+'  '+#240+#159+#144+#158+' '+JS(J,'fields.issuetype.name')
+ Ln:=StatusEmoji(JS(J,'fields.status.name'))+' '+JS(J,
+   'fields.status.name')+'  '+#240+#159+#144+#158+' '+JS(J,
+   'fields.issuetype.name')
    +'  '+#226+#140+#155+' '+DateShort(JS(J,'fields.updated'));
- If JS(J,'fields.assignee.displayName')<>'' Then Ln:=Ln+'  '+#240+#159+#145+#183+' '+JS(J,'fields.assignee.displayName')
+ If JS(J,'fields.assignee.displayName')<>'' Then Ln:=Ln+'  '+#240+#159+#145+
+   #183+' '+JS(J,'fields.assignee.displayName')
  Else Ln:=Ln+'  '+#240+#159+#145+#183+' '+Lg('Unassigned','Non assign'+#130+'');
- Ln:=Ln+'  '+#240+#159+#148+#145+' '+JS(J,'key')+'  '+#240+#159+#146+#173+' '+IStr(Nc)+Lg(' comment(s)',' commentaire(s)');
- If JS(J,'fields.priority.name')<>'' Then Ln:=Ln+'  '+#240+#159+#154+#128+' '+JS(J,'fields.priority.name');
- If JCnt(JPath(J,'fields.components'))>0 Then Ln:=Ln+'  '+#240+#159+#147+#166+' '+NamesOf(JPath(J,'fields.components'),'name',', ');
- If JCnt(JPath(J,'fields.labels'))>0 Then Ln:=Ln+'  '+#240+#159+#143+#183+''+#239+#184+#143+'  '+NamesOf(JPath(J,'fields.labels'),'',', ');
+ Ln:=Ln+'  '+#240+#159+#148+#145+' '+JS(J,'key')+'  '+#240+#159+#146+#173+' '+
+   IStr(Nc)+Lg(' comment(s)',' commentaire(s)');
+ If JS(J,'fields.priority.name')<>'' Then Ln:=Ln+'  '+#240+#159+#154+#128+' '+
+   JS(J,'fields.priority.name');
+ If JCnt(JPath(J,'fields.components'))>0 Then Ln:=Ln+'  '+#240+#159+#147+#166+
+   ' '+NamesOf(JPath(J,'fields.components'),'name',', ');
+ If JCnt(JPath(J,'fields.labels'))>0 Then Ln:=Ln+'  '+#240+#159+#143+#183+''+
+   #239+#184+#143+'  '+NamesOf(JPath(J,'fields.labels'),'',', ');
  Ln:=Ln+'  '+#240+#159+#145+#128+' '+IStr(Wch)+Lg(' watchers',' observateurs');
  WriteLn(Ln);
  WriteLn;
  WriteLn('# ',JS(J,'fields.summary'));
  WriteLn;
- WriteLn(Lg('Reporter: ','Rapporteur : '),OrDash(JS(J,'fields.reporter.displayName')),
-   Lg('   Created: ','   Cr'+#130+''+#130+' : '),DateCell(JS(J,'fields.created')));
+ WriteLn(Lg('Reporter: ','Rapporteur : '),OrDash(JS(J,'fields.reporter.display'+
+   'Name')),
+   Lg('   Created: ','   Cr'+#130+''+#130+' : '),DateCell(JS(J,
+     'fields.created')));
  If JS(J,'fields.parent.key')<>'' Then
-   WriteLn(Lg('Parent:   ','Parent :     '),JS(J,'fields.parent.key'),'  ',JS(J,'fields.parent.fields.summary'));
- If JS(J,'fields.resolution.name')<>'' Then WriteLn(Lg('Resolution: ','R'+#130+'solution : '),JS(J,'fields.resolution.name'));
- If JS(J,'fields.duedate')<>'' Then WriteLn(Lg('Due: ',''+#144+'ch'+#130+'ance : '),JS(J,'fields.duedate'));
- If JCnt(JPath(J,'fields.fixVersions'))>0 Then WriteLn(Lg('Fix versions: ','Versions de correction : '),NamesOf(JPath(J,'fields.fixVersions'),'name',', '));
+   WriteLn(Lg('Parent:   ','Parent :     '),JS(J,'fields.parent.key'),'  ',JS(J,
+     'fields.parent.fields.summary'));
+ If JS(J,'fields.resolution.name')<>'' Then WriteLn(Lg('Resolution: ',
+   'R'+#130+'solution : '),JS(J,'fields.resolution.name'));
+ If JS(J,'fields.duedate')<>'' Then WriteLn(Lg('Due: ',
+   ''+#144+'ch'+#130+'ance : '),JS(J,'fields.duedate'));
+ If JCnt(JPath(J,'fields.fixVersions'))>0 Then WriteLn(Lg('Fix versions: ',
+   'Versions de correction : '),NamesOf(JPath(J,'fields.fixVersions'),'name',
+   ', '));
  WriteLn;
  Desc:=JS(J,'fields.description');
  If Desc<>'' Then Begin WriteLn(JiraToMd(Desc));WriteLn;End
@@ -4200,7 +4436,8 @@ Begin
  If JCnt(C)>0 Then Begin
   WriteLn(Lg('Subtasks','Sous-t'+#131+'ches'));
   C:=JP[C].First;
-  While C>=0 do Begin WriteLn('  ',JS(C,'key'),'  ',JS(C,'fields.summary'),'  [',JS(C,'fields.status.name'),']');C:=JP[C].Next;End;
+  While C>=0 do Begin WriteLn('  ',JS(C,'key'),'  ',JS(C,'fields.summary'),
+    '  [',JS(C,'fields.status.name'),']');C:=JP[C].Next;End;
   WriteLn;
  End;
  C:=JPath(J,'fields.issuelinks');
@@ -4209,22 +4446,26 @@ Begin
   C:=JP[C].First;
   While C>=0 do Begin
    If JGet(C,'outwardIssue')>=0 Then
-     WriteLn('  ',JS(C,'type.outward'),' ',JS(C,'outwardIssue.key'),'  ',JS(C,'outwardIssue.fields.summary'))
-   Else WriteLn('  ',JS(C,'type.inward'),' ',JS(C,'inwardIssue.key'),'  ',JS(C,'inwardIssue.fields.summary'));
+     WriteLn('  ',JS(C,'type.outward'),' ',JS(C,'outwardIssue.key'),'  ',JS(C,
+       'outwardIssue.fields.summary'))
+   Else WriteLn('  ',JS(C,'type.inward'),' ',JS(C,'inwardIssue.key'),'  ',JS(C,
+     'inwardIssue.fields.summary'));
    C:=JP[C].Next;
   End;
   WriteLn;
  End;
  Cn:=OptInt('comments',1);
  If(Cn>0)and(Nc>0)Then Begin
-  WriteLn('------------------------ ',Lg('Comments','Commentaires'),' ------------------------');
+  WriteLn('------------------------ ',Lg('Comments','Commentaires'),
+    ' ------------------------');
   Start:=Nc-Cn;
   If Start<0 Then Start:=0;
   I:=0;
   C:=JP[Cm].First;
   While C>=0 do Begin
    If I>=Start Then Begin
-    WriteLn(JS(C,'author.displayName'),' '+#226+#128+#162+' ',DateCell(JS(C,'created')));
+    WriteLn(JS(C,'author.displayName'),' '+#226+#128+#162+' ',DateCell(JS(C,
+      'created')));
     WriteLn;
     WriteLn(JiraToMd(JS(C,'body')));
     WriteLn;
@@ -4247,13 +4488,21 @@ Var
 Begin
  CmdBegin('issue create','');
  CmdAlias('new');
- CmdExample('  # Create issue in the configured project'#10'  jira issue create'#10#10'  # Create a bug without prompts'#10'  jira issue create -tBug -s"Erreur de compilation" -yHigh -b"Le compilateur plante" --no-input');
+ CmdExample('  # Create issue in the configured project'#10+
+   '  jira issue create'#10#10'  # Create a bug without prompts'#10+
+   '  jira issue create -tBug -s"Erreur de compilation" -yHigh -b"Le '+
+   'compilateur plante" --no-input');
  OptTicketFields(True);
- Opt('assignee','a','string','Assign issue to a user@@Assigne le ticket '+#133+' un utilisateur');
- Opt('reporter','r','string','Report issue on behalf of a user@@Rapporte le ticket au nom d''un utilisateur');
- Opt('original-estimate','e','string','Set original estimate for the issue (e.g. 2d 3h)@@Estimation initiale (ex. : 2d 3h)');
- Opt('web','w','','Open issue in a web browser after creation@@Ouvre le ticket dans le navigateur apr'+#138+'s sa cr'+#130+'ation');
- Opt('raw','','','Print output in JSON format@@Affiche le r'+#130+'sultat en JSON');
+ Opt('assignee','a','string','Assign issue to a user@@Assigne le ticket '+#133+
+   ' un utilisateur');
+ Opt('reporter','r','string','Report issue on behalf of a user@@Rapporte le '+
+   'ticket au nom d''un utilisateur');
+ Opt('original-estimate','e','string','Set original estimate for the issue '+
+   '(e.g. 2d 3h)@@Estimation initiale (ex. : 2d 3h)');
+ Opt('web','w','','Open issue in a web browser after creation@@Ouvre le '+
+   'ticket dans le navigateur apr'+#138+'s sa cr'+#130+'ation');
+ Opt('raw','','','Print output in JSON format@@Affiche le r'+#130+
+   'sultat en JSON');
  OptG;
  ParseArgs(ArgStart);
  ApplyGlobals;
@@ -4264,15 +4513,19 @@ Begin
  Ty:=OptGet('type');Sm:=OptGet('summary');Pr:=OptGet('priority');
  If((Ty='')or(Sm=''))and InteractiveOk Then Begin
   If Ty='' Then Begin
-   If IssueTypes(Proj,Types)Then Ty:=Types.A[AskSelect(Lg('Issue type','Type de ticket'),Types)]
+   If IssueTypes(Proj,Types)Then Ty:=Types.A[AskSelect(Lg('Issue type',
+     'Type de ticket'),Types)]
    Else Ty:=AskLine(Lg('Issue type','Type de ticket'),'');
   End;
   If Sm='' Then Sm:=AskLine(Lg('Summary','R'+#130+'sum'+#130+''),'');
   If not Given Then Body_:=AskBody(Lg('Description','Description'));
-  If(Pr='')Then Pr:=AskLine(Lg('Priority (optional)','Priorit'+#130+' (facultatif)'),'');
+  If(Pr='')Then Pr:=AskLine(Lg('Priority (optional)','Priorit'+#130+' '+
+    '(facultatif)'),'');
  End;
- If(Ty='')or(Sm='')Then Die(Lg('Error: issue type and summary are required (-t, -s)',
-   'Erreur : le type et le r'+#130+'sum'+#130+' du ticket sont obligatoires (-t, -s)'));
+ If(Ty='')or(Sm='')Then Die(Lg('Error: issue type and summary are required '+
+   '(-t, -s)',
+   'Erreur : le type et le r'+#130+'sum'+#130+' du ticket sont obligatoires '+
+     '(-t, -s)'));
  SClear(F);SClear(Upd);
  FR(F,'project','{"key":'+JQ(Proj)+'}');
  FR(F,'issuetype','{"name":'+JQ(Ty)+'}');
@@ -4287,7 +4540,8 @@ Begin
  If Lst.N>0 Then FR(F,'fixVersions',NameList(Lst));
  OptCsv('affects-version',Lst);
  If Lst.N>0 Then FR(F,'versions',NameList(Lst));
- If OptHas('parent')Then FR(F,'parent','{"key":'+JQ(IssueKey(OptGet('parent')))+'}');
+ If OptHas('parent')Then FR(F,'parent','{"key":'+JQ(IssueKey(OptGet('parent')))+
+   '}');
  If OptHas('assignee')Then Begin
   U:=UserObj(OptGet('assignee'),Proj);
   If U<>'null' Then FR(F,'assignee',U);
@@ -4296,7 +4550,8 @@ Begin
   U:=UserObj(OptGet('reporter'),Proj);
   If U<>'null' Then FR(F,'reporter',U);
  End;
- If OptHas('original-estimate')Then FR(F,'timetracking','{"originalEstimate":'+JQ(OptGet('original-estimate'))+'}');
+ If OptHas('original-estimate')Then FR(F,'timetracking',
+   '{"originalEstimate":'+JQ(OptGet('original-estimate'))+'}');
  OptList('custom',Lst);
  For I:=0 to Lst.N-1 do AddCustom(F,Lst.A[I]);
  ApiMust(R,'POST',V2('/issue'),'{"fields":'+ObjOf(F)+'}');
@@ -4319,7 +4574,10 @@ Var
 Begin
  CmdBegin('issue edit','ISSUE-KEY');
  CmdAlias('modify');
- CmdExample('  # Edit summary and priority'#10'  jira issue edit ISSUE-1 -s"New summary" -yHigh --no-input'#10#10'  # Add a label and remove another one'#10'  jira issue edit ISSUE-1 -lbackend -l-frontend --no-input');
+ CmdExample('  # Edit summary and priority'#10'  jira issue edit ISSUE-1 '+
+   '-s"New summary" -yHigh --no-input'#10#10'  # Add a label and remove '+
+   'another one'#10+
+   '  jira issue edit ISSUE-1 -lbackend -l-frontend --no-input');
  OptTicketFields(False);
  OptG;
  ParseArgs(ArgStart);
@@ -4330,14 +4588,17 @@ Begin
  Key:=IssueKey(Pos1(0));
  Body_:=BodyArg(Given);
  Sm:=OptGet('summary');Pr:=OptGet('priority');
- Changed:=(Sm<>'')or Given or(Pr<>'')or OptHas('label')or OptHas('component')or OptHas('fix-version')
+ Changed:=(Sm<>'')or Given or(Pr<>'')or OptHas('label')or OptHas('component')or
+   OptHas('fix-version')
    or OptHas('affects-version')or OptHas('parent')or OptHas('custom');
  If not Changed Then Begin
-  If not InteractiveOk Then Die(Lg('Error: nothing to update, provide at least one field flag',
+  If not InteractiveOk Then Die(Lg('Error: nothing to update, provide at '+
+    'least one field flag',
     'Erreur : rien '+#133+' modifier, indiquez au moins un champ'));
   J:=ApiJ('GET',V2('/issue/'+Key+'?fields=summary,description,priority'),'');
   Sm:=AskLine(Lg('Summary','R'+#130+'sum'+#130+''),JS(J,'fields.summary'));
-  Body_:=AskBody(Lg('Description (empty line to keep current)','Description (ligne vide pour conserver)'));
+  Body_:=AskBody(Lg('Description (empty line to keep current)',
+    'Description (ligne vide pour conserver)'));
   Given:=Body_<>'';
   Pr:=AskLine(Lg('Priority','Priorit'+#130+''),JS(J,'fields.priority.name'));
  End;
@@ -4345,14 +4606,16 @@ Begin
  If Sm<>'' Then FS(F,'summary',Sm);
  If Given Then FS(F,'description',MdToJira(Body_));
  If Pr<>'' Then FR(F,'priority','{"name":'+JQ(Pr)+'}');
- If OptHas('parent')Then FR(F,'parent','{"key":'+JQ(IssueKey(OptGet('parent')))+'}');
+ If OptHas('parent')Then FR(F,'parent','{"key":'+JQ(IssueKey(OptGet('parent')))+
+   '}');
  ListOps(Upd,'labels','label',False);
  ListOps(Upd,'components','component',True);
  ListOps(Upd,'fixVersions','fix-version',True);
  ListOps(Upd,'versions','affects-version',True);
  OptList('custom',Lst);
  For I:=0 to Lst.N-1 do AddCustom(F,Lst.A[I]);
- If(F.N=0)and(Upd.N=0)Then Die(Lg('Error: nothing to update','Erreur : rien '+#133+' modifier'));
+ If(F.N=0)and(Upd.N=0)Then Die(Lg('Error: nothing to update',
+   'Erreur : rien '+#133+' modifier'));
  Body_:='{';
  If F.N>0 Then Body_:=Body_+'"fields":'+ObjOf(F);
  If Upd.N>0 Then Body_:=Body_+IfThen_(F.N>0,',','')+'"update":'+ObjOf(Upd);
@@ -4373,11 +4636,17 @@ Var
 Begin
  CmdBegin('issue move','ISSUE-KEY STATE');
  CmdAlias('transition');CmdAlias('mv');
- CmdExample('  # Move to "In Progress"'#10'  jira issue move ISSUE-1 "In Progress"'#10#10'  # Move to Done with a comment and a resolution'#10'  jira issue move ISSUE-1 Done "Fixed" -RFixed');
- Opt('comment','','string','Add comment to the issue@@Ajoute un commentaire au ticket');
- Opt('assignee','a','string','Assign issue to a user@@Assigne le ticket '+#133+' un utilisateur');
- Opt('resolution','R','string','Set resolution@@D'+#130+'finit la r'+#130+'solution');
- Opt('web','w','','Open issue in a web browser after transition@@Ouvre le ticket dans le navigateur apr'+#138+'s la transition');
+ CmdExample('  # Move to "In Progress"'#10'  jira issue move ISSUE-1 "In '+
+   'Progress"'#10#10'  # Move to Done with a comment and a resolution'#10+
+   '  jira issue move ISSUE-1 Done "Fixed" -RFixed');
+ Opt('comment','','string','Add comment to the issue@@Ajoute un commentaire '+
+   'au ticket');
+ Opt('assignee','a','string','Assign issue to a user@@Assigne le ticket '+#133+
+   ' un utilisateur');
+ Opt('resolution','R','string','Set resolution@@D'+#130+'finit la r'+#130+
+   'solution');
+ Opt('web','w','','Open issue in a web browser after transition@@Ouvre le '+
+   'ticket dans le navigateur apr'+#138+'s la transition');
  OptG;
  ParseArgs(ArgStart);
  NeedArgs(1,3);
@@ -4395,26 +4664,34 @@ Begin
   C:=JP[C].First;
   While C>=0 do Begin
    SAdd(Names,JS(C,'name'));
-   If(State<>'')and(Id='')and((LoStr(JS(C,'name'))=LoStr(State))or(LoStr(JS(C,'to.name'))=LoStr(State))
-     or(JS(C,'id')=State))Then Begin Id:=JS(C,'id');To_:=JS(C,'to.name');If To_='' Then To_:=JS(C,'name');End;
+   If(State<>'')and(Id='')and((LoStr(JS(C,'name'))=LoStr(State))or(LoStr(JS(C,
+     'to.name'))=LoStr(State))
+     or(JS(C,'id')=State))Then Begin Id:=JS(C,'id');To_:=JS(C,'to.name');
+       If To_='' Then To_:=JS(C,'name');End;
    C:=JP[C].Next;
   End;
  End;
  If(State='')Then Begin
-  If not InteractiveOk Then Die(Lg('Error: target state is required','Erreur : l'''+#130+'tat cible est obligatoire'));
-  If Names.N=0 Then Die(Lg('Error: no transition available','Erreur : aucune transition disponible'));
+  If not InteractiveOk Then Die(Lg('Error: target state is required',
+    'Erreur : l'''+#130+'tat cible est obligatoire'));
+  If Names.N=0 Then Die(Lg('Error: no transition available',
+    'Erreur : aucune transition disponible'));
   Nm:=Names.A[AskSelect(Lg('Transition to','Transition vers'),Names)];
   C:=JP[JGet(J,'transitions')].First;
   While C>=0 do Begin
-   If JS(C,'name')=Nm Then Begin Id:=JS(C,'id');To_:=JS(C,'to.name');If To_='' Then To_:=Nm;Break;End;
+   If JS(C,'name')=Nm Then Begin Id:=JS(C,'id');To_:=JS(C,'to.name');
+     If To_='' Then To_:=Nm;Break;End;
    C:=JP[C].Next;
   End;
  End;
  If Id='' Then Begin
   Avail:='';
-  For C:=0 to Names.N-1 do Avail:=Avail+IfThen_(C>0,', ','')+''''+Names.A[C]+'''';
-  WriteLn(StdErr,Lg('Error: invalid transition state "','Erreur : '+#130+'tat de transition invalide "'),State,'"');
-  WriteLn(StdErr,Lg('Available states for issue ',''+#144+'tats disponibles pour le ticket '),Key,': ',Avail);
+  For C:=0 to Names.N-1 do Avail:=Avail+IfThen_(C>0,', ',
+    '')+''''+Names.A[C]+'''';
+  WriteLn(StdErr,Lg('Error: invalid transition state "',
+    'Erreur : '+#130+'tat de transition invalide "'),State,'"');
+  WriteLn(StdErr,Lg('Available states for issue ',''+#144+'tats disponibles '+
+    'pour le ticket '),Key,': ',Avail);
   Halt(1);
  End;
  SClear(F);SClear(Upd);
@@ -4433,7 +4710,8 @@ Begin
  If Upd.N>0 Then Body_:=Body_+',"update":'+ObjOf(Upd);
  Body_:=Body_+'}';
  ApiMust(R,'POST',V2('/issue/'+Key+'/transitions'),Body_);
- WriteLn(OkMark,' ',Lg('Issue "','Ticket "'),Key,Lg('" status changed to "','" : '+#130+'tat chang'+#130+' en "'),To_,'"');
+ WriteLn(OkMark,' ',Lg('Issue "','Ticket "'),Key,Lg('" status changed to "',
+   '" : '+#130+'tat chang'+#130+' en "'),To_,'"');
  WriteLn(BrowseUrl(Key));
  If OptHas('web')Then OpenWeb(BrowseUrl(Key));
 End;
@@ -4445,7 +4723,10 @@ Var
 Begin
  CmdBegin('issue assign','ISSUE-KEY ASSIGNEE');
  CmdAlias('asg');
- CmdExample('  # Assign to a user (name or email)'#10'  jira issue assign ISSUE-1 "Jane Doe"'#10#10'  # Assign to the default assignee'#10'  jira issue assign ISSUE-1 default'#10#10'  # Unassign'#10'  jira issue assign ISSUE-1 x');
+ CmdExample('  # Assign to a user (name or email)'#10'  jira issue assign '+
+   'ISSUE-1 "Jane Doe"'#10#10'  # Assign to the default assignee'#10+
+   '  jira issue assign ISSUE-1 default'#10#10'  # Unassign'#10+
+   '  jira issue assign ISSUE-1 x');
  OptG;
  ParseArgs(ArgStart);
  NeedArgs(1,2);
@@ -4454,18 +4735,26 @@ Begin
  Key:=IssueKey(Pos1(0));
  Who:=Pos1(1);
  If Who='' Then Begin
-  If InTTY Then Who:=AskLine(Lg('Assign to (name, email, x to unassign, default)','Assigner '+#133+' (nom, courriel, x pour d'+#130+'sassigner, default)'),'')
-  Else Die(Lg('Error: assignee is required','Erreur : la personne assign'+#130+'e est obligatoire'));
-  If Who='' Then Die(Lg('Error: assignee is required','Erreur : la personne assign'+#130+'e est obligatoire'));
+  If InTTY Then Who:=AskLine(Lg('Assign to (name, email, x to unassign, '+
+    'default)','Assigner '+#133+' (nom, courriel, x pour d'+#130+
+    'sassigner, default)'),'')
+  Else Die(Lg('Error: assignee is required','Erreur : la personne assign'+#130+
+    'e est obligatoire'));
+  If Who='' Then Die(Lg('Error: assignee is required','Erreur : la personne '+
+    'assign'+#130+'e est obligatoire'));
  End;
  U:=UserObj(Who,JProject);
  If U='null' Then Begin
   If IsCloud Then U:='{"accountId":null}' Else U:='{"name":null}';
  End;
  ApiMust(R,'PUT',V2('/issue/'+Key+'/assignee'),U);
- If LoStr(Who)='x' Then WriteLn(OkMark,' ',Lg('Issue unassigned','Ticket d'+#130+'sassign'+#130+''))
- Else If LoStr(Who)='default' Then WriteLn(OkMark,' ',Lg('Issue assigned to the default assignee','Ticket assign'+#130+' '+#133+' la personne par d'+#130+'faut'))
- Else WriteLn(OkMark,' ',Lg('Issue assigned to ','Ticket assign'+#130+' '+#133+' '),LastUserName);
+ If LoStr(Who)='x' Then WriteLn(OkMark,' ',Lg('Issue unassigned',
+   'Ticket d'+#130+'sassign'+#130+''))
+ Else If LoStr(Who)='default' Then WriteLn(OkMark,' ',Lg('Issue assigned to '+
+   'the default assignee','Ticket assign'+#130+' '+#133+' la personne par d'+
+   #130+'faut'))
+ Else WriteLn(OkMark,' ',Lg('Issue assigned to ',
+   'Ticket assign'+#130+' '+#133+' '),LastUserName);
 End;
 
 Procedure CmdIssueCommentAdd;
@@ -4475,10 +4764,16 @@ Var
  R:THttpReq;
 Begin
  CmdBegin('issue comment add','ISSUE-KEY [COMMENT_BODY]');
- CmdExample('  # Add comment to an issue'#10'  jira issue comment add ISSUE-1 "My comment"'#10#10'  # Read the comment from a file'#10'  jira issue comment add ISSUE-1 --template /path/to/file.md');
- Opt('template','T','string','Path to a file to read comment body from (use "-" for standard input)@@Fichier contenant le commentaire ('+#174+' - '+#175+' pour l''entr'+#130+'e standard)');
- Opt('web','w','','Open issue in a web browser after adding comment@@Ouvre le ticket dans le navigateur apr'+#138+'s l''ajout');
- Opt('no-input','','','Disable prompt for non-required fields@@D'+#130+'sactive les questions interactives');
+ CmdExample('  # Add comment to an issue'#10'  jira issue comment add ISSUE-1 '+
+   '"My comment"'#10#10'  # Read the comment from a file'#10+
+   '  jira issue comment add ISSUE-1 --template /path/to/file.md');
+ Opt('template','T','string','Path to a file to read comment body from (use '+
+   '"-" for standard input)@@Fichier contenant le commentaire ('+#174+' - '+
+   #175+' pour l''entr'+#130+'e standard)');
+ Opt('web','w','','Open issue in a web browser after adding comment@@Ouvre le '+
+   'ticket dans le navigateur apr'+#138+'s l''ajout');
+ Opt('no-input','','','Disable prompt for non-required fields@@D'+#130+
+   'sactive les questions interactives');
  OptG;
  ParseArgs(ArgStart);
  NeedArgs(1,2);
@@ -4489,10 +4784,14 @@ Begin
  Body_:=Pos1(1);
  If Body_='' Then Body_:=BodyArg(Given);
  If Body_='-' Then Body_:=ReplaceAll(ReadStdin,#13,'');
- If(Body_='')and InteractiveOk Then Body_:=AskBody(Lg('Comment body','Texte du commentaire'));
- If TrimStr(Body_)='' Then Die(Lg('Error: comment body is required','Erreur : le texte du commentaire est obligatoire'));
- ApiMust(R,'POST',V2('/issue/'+Key+'/comment'),'{"body":'+JQ(MdToJira(Body_))+'}');
- WriteLn(OkMark,' ',Lg('Comment added to issue "','Commentaire ajout'+#130+' au ticket "'),Key,'"');
+ If(Body_='')and InteractiveOk Then Body_:=AskBody(Lg('Comment body',
+   'Texte du commentaire'));
+ If TrimStr(Body_)='' Then Die(Lg('Error: comment body is required',
+   'Erreur : le texte du commentaire est obligatoire'));
+ ApiMust(R,'POST',V2('/issue/'+Key+'/comment'),
+   '{"body":'+JQ(MdToJira(Body_))+'}');
+ WriteLn(OkMark,' ',Lg('Comment added to issue "','Commentaire ajout'+#130+' '+
+   'au ticket "'),Key,'"');
  WriteLn(BrowseUrl(Key));
  If OptHas('web')Then OpenWeb(BrowseUrl(Key));
 End;
@@ -4504,16 +4803,21 @@ Var
 Begin
  CmdBegin('issue delete','ISSUE-KEY');
  CmdAlias('remove');CmdAlias('rm');CmdAlias('del');
- CmdExample('  # Delete an issue'#10'  jira issue delete ISSUE-1'#10#10'  # Delete an issue along with its subtasks'#10'  jira issue delete ISSUE-1 --cascade');
- Opt('cascade','','','Delete issue along with its subtasks@@Supprime le ticket avec ses sous-t'+#131+'ches');
+ CmdExample('  # Delete an issue'#10'  jira issue delete ISSUE-1'#10#10+
+   '  # Delete an issue along with its subtasks'#10'  jira issue delete '+
+   'ISSUE-1 --cascade');
+ Opt('cascade','','','Delete issue along with its subtasks@@Supprime le '+
+   'ticket avec ses sous-t'+#131+'ches');
  OptG;
  ParseArgs(ArgStart);
  NeedArgs(1,1);
  ApplyGlobals;
  RequireConfig;
  Key:=IssueKey(Pos1(0));
- ApiMust(R,'DELETE',V2('/issue/'+Key+'?deleteSubtasks='+IfThen_(OptHas('cascade'),'true','false')),'');
- WriteLn(OkMark,' ',Lg('Issue ','Ticket '),Key,Lg(' deleted',' supprim'+#130+''));
+ ApiMust(R,'DELETE',V2('/issue/'+Key+'?deleteSubtasks='+
+   IfThen_(OptHas('cascade'),'true','false')),'');
+ WriteLn(OkMark,' ',Lg('Issue ','Ticket '),Key,Lg(' deleted',
+   ' supprim'+#130+''));
 End;
 
 Procedure LinkTypesHelp;
@@ -4528,7 +4832,8 @@ Begin
   C:=JP[C].First;
   While C>=0 do Begin SAdd(L,JS(C,'name'));C:=JP[C].Next;End;
  End;
- WriteLn(StdErr,Lg('Available link types: ','Types de lien disponibles : '),JoinList(L,', '));
+ WriteLn(StdErr,Lg('Available link types: ','Types de lien disponibles : '),
+   JoinList(L,', '));
 End;
 
 Procedure CmdIssueLink;
@@ -4537,20 +4842,23 @@ Var
  R:THttpReq;
 Begin
  CmdBegin('issue link','INWARD_ISSUE_KEY OUTWARD_ISSUE_KEY ISSUE_LINK_TYPE');
- CmdExample('  # Link ISSUE-1 and ISSUE-2 with the "Blocks" link type'#10'  jira issue link ISSUE-1 ISSUE-2 Blocks');
+ CmdExample('  # Link ISSUE-1 and ISSUE-2 with the "Blocks" link type'#10+
+   '  jira issue link ISSUE-1 ISSUE-2 Blocks');
  OptG;
  ParseArgs(ArgStart);
  NeedArgs(3,3);
  ApplyGlobals;
  RequireConfig;
  A:=IssueKey(Pos1(0));B:=IssueKey(Pos1(1));Ty:=Pos1(2);
- ApiCall(R,'POST',V2('/issueLink'),'{"type":{"name":'+JQ(Ty)+'},"inwardIssue":{"key":'+JQ(A)+'},"outwardIssue":{"key":'+JQ(B)+'}}');
+ ApiCall(R,'POST',V2('/issueLink'),'{"type":{"name":'+JQ(Ty)+
+   '},"inwardIssue":{"key":'+JQ(A)+'},"outwardIssue":{"key":'+JQ(B)+'}}');
  If not ApiOk(R)Then Begin
   WriteLn(StdErr,ErrText(R));
   LinkTypesHelp;
   Halt(1);
  End;
- WriteLn(OkMark,' ',Lg('Issues linked','Tickets li'+#130+'s'),': ',A,' <-> ',B,' (',Ty,')');
+ WriteLn(OkMark,' ',Lg('Issues linked','Tickets li'+#130+'s'),': ',A,' <-> ',B,
+   ' (',Ty,')');
 End;
 
 Procedure CmdIssueLinkRemote;
@@ -4559,7 +4867,8 @@ Var
  R:THttpReq;
 Begin
  CmdBegin('issue link remote','ISSUE-KEY REMOTE_URL [REMOTE_URL_TITLE]');
- CmdExample('  # Add a remote link to an issue'#10'  jira issue link remote ISSUE-1 https://example.com "Example site"');
+ CmdExample('  # Add a remote link to an issue'#10'  jira issue link remote '+
+   'ISSUE-1 https://example.com "Example site"');
  OptG;
  ParseArgs(ArgStart);
  NeedArgs(2,3);
@@ -4567,8 +4876,10 @@ Begin
  RequireConfig;
  Key:=IssueKey(Pos1(0));Url:=Pos1(1);Title:=Pos1(2);
  If Title='' Then Title:=Url;
- ApiMust(R,'POST',V2('/issue/'+Key+'/remotelink'),'{"object":{"url":'+JQ(Url)+',"title":'+JQ(Title)+'}}');
- WriteLn(OkMark,' ',Lg('Remote link added to ','Lien distant ajout'+#130+' '+#133+' '),Key);
+ ApiMust(R,'POST',V2('/issue/'+Key+'/remotelink'),
+   '{"object":{"url":'+JQ(Url)+',"title":'+JQ(Title)+'}}');
+ WriteLn(OkMark,' ',Lg('Remote link added to ',
+   'Lien distant ajout'+#130+' '+#133+' '),Key);
 End;
 
 Procedure CmdIssueUnlink;
@@ -4579,7 +4890,8 @@ Var
  R:THttpReq;
 Begin
  CmdBegin('issue unlink','INWARD_ISSUE_KEY OUTWARD_ISSUE_KEY');
- CmdExample('  # Unlink ISSUE-1 and ISSUE-2'#10'  jira issue unlink ISSUE-1 ISSUE-2');
+ CmdExample('  # Unlink ISSUE-1 and ISSUE-2'#10'  jira issue unlink ISSUE-1 '+
+   'ISSUE-2');
  OptG;
  ParseArgs(ArgStart);
  NeedArgs(2,2);
@@ -4592,11 +4904,13 @@ Begin
  If C>=0 Then Begin
   C:=JP[C].First;
   While C>=0 do Begin
-   If(JS(C,'outwardIssue.key')=B)or(JS(C,'inwardIssue.key')=B)Then Begin Id:=JS(C,'id');Break;End;
+   If(JS(C,'outwardIssue.key')=B)or(JS(C,'inwardIssue.key')=B)Then Begin Id:=
+     JS(C,'id');Break;End;
    C:=JP[C].Next;
   End;
  End;
- If Id='' Then Die(Lg('Error: no link found between ','Erreur : aucun lien entre ')+A+' / '+B);
+ If Id='' Then Die(Lg('Error: no link found between ','Erreur : aucun lien '+
+   'entre ')+A+' / '+B);
  ApiMust(R,'DELETE',V2('/issueLink/'+Id),'');
  WriteLn(OkMark,' ',Lg('Link removed','Lien supprim'+#130+''));
 End;
@@ -4610,33 +4924,45 @@ Var
  U:AnsiString;
 Begin
  CmdBegin('issue clone','ISSUE-KEY');
- CmdExample('  # Clone an issue'#10'  jira issue clone ISSUE-1'#10#10'  # Clone and override summary, replacing a word in the text'#10'  jira issue clone ISSUE-1 -s"New summary" -H"old:new"');
- Opt('summary','s','string','Issue summary or title (default: "CLONE - <summary>")@@R'+#130+'sum'+#130+' du clone (d'+#130+'faut : '+#174+' CLONE - <r'+#130+'sum'+#130+'> '+#175+')');
+ CmdExample('  # Clone an issue'#10'  jira issue clone ISSUE-1'#10#10+
+   '  # Clone and override summary, replacing a word in the text'#10+
+   '  jira issue clone ISSUE-1 -s"New summary" -H"old:new"');
+ Opt('summary','s','string','Issue summary or title (default: "CLONE - '+
+   '<summary>")@@R'+#130+'sum'+#130+' du clone (d'+#130+'faut : '+#174+
+   ' CLONE - <r'+#130+'sum'+#130+'> '+#175+')');
  Opt('priority','y','string','Set issue priority@@Priorit'+#130+' du clone');
- Opt('assignee','a','string','Assign issue to a user@@Assigne le clone '+#133+' un utilisateur');
+ Opt('assignee','a','string','Assign issue to a user@@Assigne le clone '+#133+
+   ' un utilisateur');
  Opt('label','l','*string','Add issue labels@@'+#144+'tiquettes du clone');
  Opt('component','C','*string','Replace components@@Composants du clone');
  Opt('parent','P','string','Link to a parent key@@Cl'+#130+' du ticket parent');
- Opt('replace','H','string','Replace string in summary and description during cloning (format "find:replace")@@Remplace du texte dans le r'+#130+'sum'+#130+' et la description (format '+#174+' chercher:remplacer '+#175+')');
+ Opt('replace','H','string','Replace string in summary and description during '+
+   'cloning (format "find:replace")@@Remplace du texte dans le r'+#130+'sum'+
+   #130+' et la description (format '+#174+' chercher:remplacer '+#175+')');
  OptG;
  ParseArgs(ArgStart);
  NeedArgs(1,1);
  ApplyGlobals;
  RequireConfig;
  Key:=IssueKey(Pos1(0));
- J:=ApiJ('GET',V2('/issue/'+Key+'?fields=summary,description,issuetype,priority,labels,components,fixVersions,versions,parent,project'),'');
+ J:=ApiJ('GET',V2('/issue/'+Key+'?fields=summary,description,issuetype,priorit'+
+   'y,labels,components,fixVersions,versions,parent,project'),'');
  Sm:=OptGet('summary');
  If Sm='' Then Sm:='CLONE - '+JS(J,'fields.summary');
  Desc:=JS(J,'fields.description');
  Rep:=OptGet('replace');
  If Rep<>'' Then Begin
   I:=Pos(':',Rep);
-  If I=0 Then Die(Lg('Error: invalid --replace value, expected "find:replace"','Erreur : valeur de --replace invalide, attendu '+#174+' chercher:remplacer '+#175+''));
+  If I=0 Then Die(Lg('Error: invalid --replace value, expected "find:replace"',
+    'Erreur : valeur de --replace invalide, attendu '+#174+
+    ' chercher:remplacer '+#175+''));
   Find:=Copy(Rep,1,I-1);Repl:=Copy(Rep,I+1,Length(Rep));
-  If Find<>'' Then Begin Sm:=ReplaceAll(Sm,Find,Repl);Desc:=ReplaceAll(Desc,Find,Repl);End;
+  If Find<>'' Then Begin Sm:=ReplaceAll(Sm,Find,Repl);Desc:=ReplaceAll(Desc,
+    Find,Repl);End;
  End;
  SClear(F);
- FR(F,'project','{"key":'+JQ(IfThen_(JS(J,'fields.project.key')<>'',JS(J,'fields.project.key'),JProject))+'}');
+ FR(F,'project','{"key":'+JQ(IfThen_(JS(J,'fields.project.key')<>'',JS(J,
+   'fields.project.key'),JProject))+'}');
  FR(F,'issuetype','{"name":'+JQ(JS(J,'fields.issuetype.name'))+'}');
  FS(F,'summary',Sm);
  If Desc<>'' Then FS(F,'description',Desc);
@@ -4645,7 +4971,8 @@ Begin
  If Pr<>'' Then FR(F,'priority','{"name":'+JQ(Pr)+'}');
  OptCsv('label',Lst);
  If Lst.N>0 Then FR(F,'labels',StrArr(Lst))
- Else If JCnt(JPath(J,'fields.labels'))>0 Then FR(F,'labels',RawJson(JPath(J,'fields.labels')));
+ Else If JCnt(JPath(J,'fields.labels'))>0 Then FR(F,'labels',RawJson(JPath(J,
+   'fields.labels')));
  OptCsv('component',Lst);
  If Lst.N>0 Then FR(F,'components',NameList(Lst))
  Else If JCnt(JPath(J,'fields.components'))>0 Then Begin
@@ -4654,15 +4981,18 @@ Begin
   While Idx>=0 do Begin SAdd(Lst,JS(Idx,'name'));Idx:=JP[Idx].Next;End;
   FR(F,'components',NameList(Lst));
  End;
- If OptHas('parent')Then FR(F,'parent','{"key":'+JQ(IssueKey(OptGet('parent')))+'}')
- Else If JS(J,'fields.parent.key')<>'' Then FR(F,'parent','{"key":'+JQ(JS(J,'fields.parent.key'))+'}');
+ If OptHas('parent')Then FR(F,'parent','{"key":'+JQ(IssueKey(OptGet('parent')))+
+   '}')
+ Else If JS(J,'fields.parent.key')<>'' Then FR(F,'parent','{"key":'+JQ(JS(J,
+   'fields.parent.key'))+'}');
  If OptHas('assignee')Then Begin
   U:=UserObj(OptGet('assignee'),JS(J,'fields.project.key'));
   If U<>'null' Then FR(F,'assignee',U);
  End;
  ApiMust(R,'POST',V2('/issue'),'{"fields":'+ObjOf(F)+'}');
  NewKey:=JS(JParse(R.RespBody),'key');
- ApiCall(R,'POST',V2('/issueLink'),'{"type":{"name":"Cloners"},"inwardIssue":{"key":'+JQ(NewKey)+'},"outwardIssue":{"key":'+JQ(Key)+'}}');
+ ApiCall(R,'POST',V2('/issueLink'),'{"type":{"name":"Cloners"},"inwardIssue":{'+
+   '"key":'+JQ(NewKey)+'},"outwardIssue":{"key":'+JQ(Key)+'}}');
  WriteLn(OkMark,' ',Lg('Issue cloned','Ticket clon'+#130+''));
  WriteLn(BrowseUrl(NewKey));
 End;
@@ -4674,11 +5004,19 @@ Var
  R:THttpReq;
 Begin
  CmdBegin('issue worklog add','ISSUE-KEY TIME_SPENT');
- CmdExample('  # Add 2 hours and 30 minutes of work'#10'  jira issue worklog add ISSUE-1 "2h 30m" --no-input'#10#10'  # With a comment and a start date'#10'  jira issue worklog add ISSUE-1 "1d" --comment "Review" --started "2024-05-06 09:00"');
- Opt('comment','','string','Comment about the work@@Commentaire sur le travail effectu'+#130+'');
- Opt('started','','string','The datetime on which the worklog effort was started, format "yyyy-mm-dd hh:mm"@@Date et heure de d'+#130+'but, format '+#174+' aaaa-mm-jj hh:mm '+#175+'');
- Opt('new-estimate','','string','New estimate for the issue@@Nouvelle estimation du ticket');
- Opt('no-input','','','Disable prompt for non-required fields@@D'+#130+'sactive les questions interactives');
+ CmdExample('  # Add 2 hours and 30 minutes of work'#10+
+   '  jira issue worklog add ISSUE-1 "2h 30m" --no-input'#10#10+
+   '  # With a comment and a start date'#10'  jira issue worklog add ISSUE-1 '+
+   '"1d" --comment "Review" --started "2024-05-06 09:00"');
+ Opt('comment','','string','Comment about the work@@Commentaire sur le '+
+   'travail effectu'+#130+'');
+ Opt('started','','string','The datetime on which the worklog effort was '+
+   'started, format "yyyy-mm-dd hh:mm"@@Date et heure de d'+#130+'but, format '+
+   #174+' aaaa-mm-jj hh:mm '+#175+'');
+ Opt('new-estimate','','string','New estimate for the issue@@Nouvelle '+
+   'estimation du ticket');
+ Opt('no-input','','','Disable prompt for non-required fields@@D'+#130+
+   'sactive les questions interactives');
  OptG;
  ParseArgs(ArgStart);
  NeedArgs(1,2);
@@ -4687,15 +5025,18 @@ Begin
  RequireConfig;
  Key:=IssueKey(Pos1(0));
  Ts:=Pos1(1);
- If(Ts='')and InteractiveOk Then Ts:=AskLine(Lg('Time spent (e.g. 2h 30m)','Temps pass'+#130+' (ex. : 2h 30m)'),'');
- If Ts='' Then Die(Lg('Error: time spent is required','Erreur : le temps pass'+#130+' est obligatoire'));
+ If(Ts='')and InteractiveOk Then Ts:=AskLine(Lg('Time spent (e.g. 2h 30m)',
+   'Temps pass'+#130+' (ex. : 2h 30m)'),'');
+ If Ts='' Then Die(Lg('Error: time spent is required',
+   'Erreur : le temps pass'+#130+' est obligatoire'));
  Cm:=OptGet('comment');
  SClear(F);
  FS(F,'timeSpent',Ts);
  FS(F,'started',WorklogDate(OptGet('started')));
  If Cm<>'' Then FS(F,'comment',Cm);
  Path:=V2('/issue/'+Key+'/worklog');
- If OptHas('new-estimate')Then Path:=Path+'?adjustEstimate=new&newEstimate='+UrlEnc(OptGet('new-estimate'),False);
+ If OptHas('new-estimate')Then Path:=Path+'?adjustEstimate=new&newEstimate='+
+   UrlEnc(OptGet('new-estimate'),False);
  ApiMust(R,'POST',Path,ObjOf(F));
  WriteLn(OkMark,' ',Lg('Worklog added','Temps de travail ajout'+#130+''));
 End;
@@ -4706,15 +5047,20 @@ End;
 Procedure OptBasicOut;
 Begin
  Opt('plain','','','Display output in plain mode@@Affiche en mode texte');
- Opt('raw','','','Print raw Jira API response@@Affiche la r'+#130+'ponse brute (JSON) de l''API Jira');
+ Opt('raw','','','Print raw Jira API response@@Affiche la r'+#130+
+   'ponse brute (JSON) de l''API Jira');
  Opt('csv','','','Print output in CSV format@@Affiche au format CSV');
  Opt('table','','','Display output in table view@@Affiche en tableau');
- Opt('delimiter','','string','Custom delimiter for plain mode (default "\t")@@S'+#130+'parateur du mode texte (d'+#130+'faut : tabulation)');
- Opt('no-headers','','','Don''t display table headers in plain mode@@N''affiche pas les en-t'+#136+'tes');
- Opt('no-truncate','','','Show all available columns in plain mode, without truncating@@N''abr'+#138+'ge pas les cellules');
+ Opt('delimiter','','string','Custom delimiter for plain mode (default "\t")@@S'
+   +#130+'parateur du mode texte (d'+#130+'faut : tabulation)');
+ Opt('no-headers','','','Don''t display table headers in plain '+
+   'mode@@N''affiche pas les en-t'+#136+'tes');
+ Opt('no-truncate','','','Show all available columns in plain mode, without '+
+   'truncating@@N''abr'+#138+'ge pas les cellules');
 End;
 
-{ affiche les elements d'un tableau JSON en colonnes ; Paths = chemins JSON separes par des virgules }
+{ affiche les elements d'un tableau JSON en colonnes ; Paths = chemins JSON
+  separes par des virgules }
 Procedure ShowTable(Arr:LongInt;Const Heads,Paths:AnsiString);
 Var
  H,P,Row:TSList;
@@ -4813,7 +5159,8 @@ Begin
  RequireConfig;
  Proj:=NeedProject;
  J:=ApiJ('GET',V2('/project/'+UrlEnc(Proj,False)+'/versions'),'');
- ShowTable(J,'ID,NAME,RELEASED,DATE,DESCRIPTION','id,name,released,releaseDate,description');
+ ShowTable(J,'ID,NAME,RELEASED,DATE,DESCRIPTION','id,name,released,releaseDate'+
+   ',description');
 End;
 
 { tableau de la configuration, sinon le premier tableau scrum du projet }
@@ -4825,11 +5172,13 @@ Begin
  If JBoardId<>'' Then Exit;
  J:=BoardsOf(NeedProject,'scrum');
  C:=JAt(J,0);
- If C<0 Then Die(Lg('Error: no scrum board found for project ','Erreur : aucun tableau scrum pour le projet ')+JProject);
+ If C<0 Then Die(Lg('Error: no scrum board found for project ',
+   'Erreur : aucun tableau scrum pour le projet ')+JProject);
  BoardIdFor:=JS(C,'id');
 End;
 
-{ sprints du tableau, ordre de l'API (du plus ancien au plus recent) ; renvoie un tableau JSON }
+{ sprints du tableau, ordre de l'API (du plus ancien au plus recent) ; renvoie
+  un tableau JSON }
 Function SprintsOf(Const Board,State:AnsiString):LongInt;
 Var
  J,C,Start,Page:LongInt;
@@ -4865,12 +5214,21 @@ Var
 Begin
  CmdBegin('sprint list','[SPRINT_ID]');
  CmdAlias('lists');CmdAlias('ls');
- CmdExample('  # List all sprints'#10'  jira sprint list'#10#10'  # List issues of the current sprint'#10'  jira sprint list --current'#10#10'  # List issues of a sprint, only bugs assigned to me'#10'  jira sprint list 42 -tBug -a"$(jira me)"');
- Opt('current','','','List issues in the current sprint@@Liste les tickets du sprint actif');
- Opt('prev','','','List issues in the previous sprint@@Liste les tickets du sprint pr'+#130+'c'+#130+'dent');
- Opt('next','','','List issues in the next planned sprint@@Liste les tickets du prochain sprint');
- Opt('state','','string','Filter sprint by its state (comma separated): future, active, closed@@Filtre les sprints par '+#130+'tat (s'+#130+'par'+#130+'s par des virgules) : future, active, closed');
- OptFilters;OptListOut('TYPE,KEY,SUMMARY,STATUS,ASSIGNEE,REPORTER,PRIORITY,RESOLUTION,CREATED,UPDATED,LABELS');OptG;
+ CmdExample('  # List all sprints'#10'  jira sprint list'#10#10+
+   '  # List issues of the current sprint'#10'  jira sprint list --current'#10+
+   #10'  # List issues of a sprint, only bugs assigned to me'#10+
+   '  jira sprint list 42 -tBug -a"$(jira me)"');
+ Opt('current','','','List issues in the current sprint@@Liste les tickets du '+
+   'sprint actif');
+ Opt('prev','','','List issues in the previous sprint@@Liste les tickets du '+
+   'sprint pr'+#130+'c'+#130+'dent');
+ Opt('next','','','List issues in the next planned sprint@@Liste les tickets '+
+   'du prochain sprint');
+ Opt('state','','string','Filter sprint by its state (comma separated): '+
+   'future, active, closed@@Filtre les sprints par '+#130+'tat (s'+#130+'par'+
+   #130+'s par des virgules) : future, active, closed');
+ OptFilters;OptListOut('TYPE,KEY,SUMMARY,STATUS,ASSIGNEE,REPORTER,PRIORITY,RES'+
+   'OLUTION,CREATED,UPDATED,LABELS');OptG;
  ParseArgs(ArgStart);
  ApplyGlobals;
  RequireConfig;
@@ -4889,14 +5247,16 @@ Begin
   Text:='';
   For I:=Rev.N-1 downto 0 do Text:=Text+IfThen_(Text<>'',',','')+Rev.A[I];
   Arr:=JParse('['+Text+']');
-  ShowTable(Arr,'ID,NAME,START,END,COMPLETE,STATE','id,name,startDate,endDate,completeDate,state');
+  ShowTable(Arr,'ID,NAME,START,END,COMPLETE,STATE','id,name,startDate,endDate,'+
+    'completeDate,state');
   Exit;
  End;
  If Id='' Then Begin
   If OptHas('current')Then Arr:=SprintsOf(Board,'active')
   Else If OptHas('prev')Then Arr:=SprintsOf(Board,'closed')
   Else Arr:=SprintsOf(Board,'future');
-  If JCnt(Arr)=0 Then Die(Lg('Error: no matching sprint found','Erreur : aucun sprint correspondant'));
+  If JCnt(Arr)=0 Then Die(Lg('Error: no matching sprint found',
+    'Erreur : aucun sprint correspondant'));
   If OptHas('prev')Then Pick:=JP[Arr].Last Else Pick:=JP[Arr].First;
   Id:=JS(Pick,'id');
  End;
@@ -4917,18 +5277,21 @@ Var
  R:THttpReq;
 Begin
  CmdBegin('sprint add','SPRINT_ID ISSUE_1 [ISSUE_2...]');
- CmdExample('  # Add issues to a sprint'#10'  jira sprint add 42 ISSUE-1 ISSUE-2');
+ CmdExample('  # Add issues to a sprint'#10'  jira sprint add 42 ISSUE-1 '+
+   'ISSUE-2');
  OptG;
  ParseArgs(ArgStart);
  NeedArgs(2,-1);
  ApplyGlobals;
  RequireConfig;
- If PosArgs.N>51 Then Die(Lg('Error: at most 50 issues can be added at once','Erreur : 50 tickets au maximum '+#133+' la fois'));
+ If PosArgs.N>51 Then Die(Lg('Error: at most 50 issues can be added at once',
+   'Erreur : 50 tickets au maximum '+#133+' la fois'));
  Id:=Pos1(0);
  SClear(Keys);
  For I:=1 to PosArgs.N-1 do SAdd(Keys,IssueKey(PosArgs.A[I]));
  ApiMust(R,'POST',Agile('/sprint/'+Id+'/issue'),'{"issues":'+StrArr(Keys)+'}');
- WriteLn(OkMark,' ',Lg('Issues added to the sprint ','Tickets ajout'+#130+'s au sprint '),Id);
+ WriteLn(OkMark,' ',Lg('Issues added to the sprint ','Tickets ajout'+#130+'s '+
+   'au sprint '),Id);
 End;
 
 Procedure CmdSprintClose;
@@ -4951,7 +5314,8 @@ End;
 { requete JQL pour les tickets d'un epic }
 Function EpicJql(Const Key:AnsiString):AnsiString;
 Begin
- If JProjType='next-gen' Then EpicJql:='parent = '+JqlQ(Key) Else EpicJql:='"Epic Link" = '+JqlQ(Key);
+ If JProjType='next-gen' Then EpicJql:='parent = '+JqlQ(Key) Else EpicJql:=
+   '"Epic Link" = '+JqlQ(Key);
 End;
 
 Procedure CmdEpicList;
@@ -4963,8 +5327,10 @@ Var
 Begin
  CmdBegin('epic list','[EPIC-KEY]');
  CmdAlias('lists');CmdAlias('ls');
- CmdExample('  # List all epics'#10'  jira epic list'#10#10'  # List issues in an epic'#10'  jira epic list EPIC-1 -ax');
- OptFilters;OptListOut('KEY,NAME,STATUS,ASSIGNEE,REPORTER,PRIORITY,RESOLUTION,CREATED,UPDATED,LABELS');OptG;
+ CmdExample('  # List all epics'#10'  jira epic list'#10#10+
+   '  # List issues in an epic'#10'  jira epic list EPIC-1 -ax');
+ OptFilters;OptListOut('KEY,NAME,STATUS,ASSIGNEE,REPORTER,PRIORITY,RESOLUTION,'+
+   'CREATED,UPDATED,LABELS');OptG;
  ParseArgs(ArgStart);
  ApplyGlobals;
  RequireConfig;
@@ -4978,12 +5344,14 @@ Begin
   For I:=1 to PosArgs.N-1 do Text:=Text+IfThen_(I>1,' ','')+PosArgs.A[I];
   Jql:=BuildJql(Text,'');
   I:=Pos(' ORDER BY ',Jql);
-  If I=0 Then Jql:=EpicJql(Key)+' '+Jql Else Jql:=Copy(Jql,1,I-1)+' AND '+EpicJql(Key)+Copy(Jql,I,Length(Jql));
+  If I=0 Then Jql:=EpicJql(Key)+' '+Jql Else Jql:=Copy(Jql,1,
+    I-1)+' AND '+EpicJql(Key)+Copy(Jql,I,Length(Jql));
  End;
  If IsCloud Then SearchIssues(V2('/search/jql'),Jql,False,From,Limit,L,Total)
  Else SearchIssues(V2('/search'),Jql,False,From,Limit,L,Total);
  If L.N=0 Then Begin NoResults;Exit;End;
- If Key='' Then ShowIssues(L,'KEY,NAME,STATUS,ASSIGNEE,REPORTER,PRIORITY,RESOLUTION,CREATED,UPDATED,LABELS')
+ If Key='' Then ShowIssues(L,'KEY,NAME,STATUS,ASSIGNEE,REPORTER,PRIORITY,RESOL'+
+   'UTION,CREATED,UPDATED,LABELS')
  Else ShowIssues(L,DefIssueCols);
 End;
 
@@ -4996,7 +5364,8 @@ Begin
  If JEpicName<>'' Then Exit;
  C:=JP[AllFields].First;
  While C>=0 do Begin
-  If LoStr(JS(C,'name'))='epic name' Then Begin EpicNameField:=JS(C,'id');Exit;End;
+  If LoStr(JS(C,'name'))='epic name' Then Begin EpicNameField:=JS(C,'id');Exit;
+    End;
   C:=JP[C].Next;
  End;
 End;
@@ -5011,12 +5380,16 @@ Var
 Begin
  CmdBegin('epic create','');
  CmdAlias('new');
- CmdExample('  # Create an epic'#10'  jira epic create -n"Payments" -s"Payments revamp" -b"Rework the payment flow" --no-input');
+ CmdExample('  # Create an epic'#10'  jira epic create -n"Payments" '+
+   '-s"Payments revamp" -b"Rework the payment flow" --no-input');
  Opt('name','n','string','Epic name@@Nom de l''epic');
  OptTicketFields(False);
- Opt('assignee','a','string','Assign epic to a user@@Assigne l''epic '+#133+' un utilisateur');
- Opt('web','w','','Open epic in a web browser after creation@@Ouvre l''epic dans le navigateur apr'+#138+'s sa cr'+#130+'ation');
- Opt('raw','','','Print output in JSON format@@Affiche le r'+#130+'sultat en JSON');
+ Opt('assignee','a','string','Assign epic to a user@@Assigne l''epic '+#133+
+   ' un utilisateur');
+ Opt('web','w','','Open epic in a web browser after creation@@Ouvre l''epic '+
+   'dans le navigateur apr'+#138+'s sa cr'+#130+'ation');
+ Opt('raw','','','Print output in JSON format@@Affiche le r'+#130+
+   'sultat en JSON');
  OptG;
  ParseArgs(ArgStart);
  ApplyGlobals;
@@ -5032,7 +5405,9 @@ Begin
  End;
  If Sm='' Then Sm:=Nm;
  If Nm='' Then Nm:=Sm;
- If Sm='' Then Die(Lg('Error: epic name and summary are required (-n, -s)','Erreur : le nom et le r'+#130+'sum'+#130+' de l''epic sont obligatoires (-n, -s)'));
+ If Sm='' Then Die(Lg('Error: epic name and summary are required (-n, -s)',
+   'Erreur : le nom et le r'+#130+'sum'+#130+' de l''epic sont obligatoires '+
+   '(-n, -s)'));
  SClear(F);
  FR(F,'project','{"key":'+JQ(Proj)+'}');
  FR(F,'issuetype','{"name":"Epic"}');
@@ -5071,22 +5446,27 @@ Var
  R:THttpReq;
 Begin
  CmdBegin('epic add','EPIC_KEY ISSUE_1 [ISSUE_2...]');
- CmdExample('  # Add issues to an epic'#10'  jira epic add EPIC-1 ISSUE-1 ISSUE-2');
+ CmdExample('  # Add issues to an epic'#10'  jira epic add EPIC-1 ISSUE-1 '+
+   'ISSUE-2');
  OptG;
  ParseArgs(ArgStart);
  NeedArgs(2,-1);
  ApplyGlobals;
  RequireConfig;
- If PosArgs.N>51 Then Die(Lg('Error: at most 50 issues can be added at once','Erreur : 50 tickets au maximum '+#133+' la fois'));
+ If PosArgs.N>51 Then Die(Lg('Error: at most 50 issues can be added at once',
+   'Erreur : 50 tickets au maximum '+#133+' la fois'));
  Epic:=IssueKey(Pos1(0));
  SClear(Keys);
  For I:=1 to PosArgs.N-1 do SAdd(Keys,IssueKey(PosArgs.A[I]));
  If JProjType='next-gen' Then Begin
   For I:=0 to Keys.N-1 do
-   ApiMust(R,'PUT',V2('/issue/'+Keys.A[I]),'{"fields":{"parent":{"key":'+JQ(Epic)+'}}}');
+   ApiMust(R,'PUT',V2('/issue/'+Keys.A[I]),'{"fields":{"parent":{"key":'+
+     JQ(Epic)+'}}}');
  End
- Else ApiMust(R,'POST',Agile('/epic/'+Epic+'/issue'),'{"issues":'+StrArr(Keys)+'}');
- WriteLn(OkMark,' ',Lg('Issues added to the epic ','Tickets ajout'+#130+'s '+#133+' l''epic '),Epic);
+ Else ApiMust(R,'POST',Agile('/epic/'+Epic+'/issue'),
+   '{"issues":'+StrArr(Keys)+'}');
+ WriteLn(OkMark,' ',Lg('Issues added to the epic ',
+   'Tickets ajout'+#130+'s '+#133+' l''epic '),Epic);
 End;
 
 Procedure CmdEpicRemove;
@@ -5097,13 +5477,15 @@ Var
 Begin
  CmdBegin('epic remove','ISSUE_1 [ISSUE_2...]');
  CmdAlias('rm');
- CmdExample('  # Remove issues from their epic'#10'  jira epic remove ISSUE-1 ISSUE-2');
+ CmdExample('  # Remove issues from their epic'#10'  jira epic remove ISSUE-1 '+
+   'ISSUE-2');
  OptG;
  ParseArgs(ArgStart);
  NeedArgs(1,-1);
  ApplyGlobals;
  RequireConfig;
- If PosArgs.N>50 Then Die(Lg('Error: at most 50 issues can be removed at once','Erreur : 50 tickets au maximum '+#133+' la fois'));
+ If PosArgs.N>50 Then Die(Lg('Error: at most 50 issues can be removed at once',
+   'Erreur : 50 tickets au maximum '+#133+' la fois'));
  SClear(Keys);
  For I:=0 to PosArgs.N-1 do SAdd(Keys,IssueKey(PosArgs.A[I]));
  If JProjType='next-gen' Then Begin
@@ -5111,7 +5493,8 @@ Begin
    ApiMust(R,'PUT',V2('/issue/'+Keys.A[I]),'{"fields":{"parent":null}}');
  End
  Else ApiMust(R,'POST',Agile('/epic/none/issue'),'{"issues":'+StrArr(Keys)+'}');
- WriteLn(OkMark,' ',Lg('Issues removed from their epic','Tickets retir'+#130+'s de leur epic'));
+ WriteLn(OkMark,' ',Lg('Issues removed from their epic',
+   'Tickets retir'+#130+'s de leur epic'));
 End;
 
 Procedure CmdMe;
@@ -5140,8 +5523,11 @@ Var
 Begin
  CmdBegin('open','[ISSUE_KEY]');
  CmdAlias('browse');
- CmdExample('  # Open the project in the browser'#10'  jira open'#10#10'  # Open an issue'#10'  jira open ISSUE-1'#10#10'  # Print the URL only'#10'  jira open ISSUE-1 --no-browser');
- Opt('no-browser','n','','Do not open the browser, print the URL@@N''ouvre pas le navigateur, affiche l''URL');
+ CmdExample('  # Open the project in the browser'#10'  jira open'#10#10+
+   '  # Open an issue'#10'  jira open ISSUE-1'#10#10'  # Print the URL only'#10+
+   '  jira open ISSUE-1 --no-browser');
+ Opt('no-browser','n','','Do not open the browser, print the URL@@N''ouvre '+
+   'pas le navigateur, affiche l''URL');
  OptG;
  ParseArgs(ArgStart);
  NeedArgs(0,1);
@@ -5181,61 +5567,85 @@ Var
  Fld:LongInt;
 Begin
  CmdBegin('init','');
- CmdExample('  # Interactive setup'#10'  jira init'#10#10'  # Non-interactive setup'#10'  JIRA_API_TOKEN=xxx jira init --installation cloud --server https://example.atlassian.net --login me@example.com --project PROJ --board none --force');
- Opt('installation','','string','Jira installation type: cloud or local@@Type d''installation Jira : cloud ou local');
+ CmdExample('  # Interactive setup'#10'  jira init'#10#10+
+   '  # Non-interactive setup'#10'  JIRA_API_TOKEN=xxx jira init '+
+   '--installation cloud --server https://example.atlassian.net --login '+
+   'me@example.com --project PROJ --board none --force');
+ Opt('installation','','string','Jira installation type: cloud or local@@Type '+
+   'd''installation Jira : cloud ou local');
  Opt('server','','string','Jira server URL@@URL du serveur Jira');
- Opt('login','','string','Jira login (email for cloud, username for local)@@Identifiant Jira (courriel pour cloud, nom pour local)');
- Opt('auth-type','','string','Authentication type: basic, bearer or mtls@@Type d''authentification : basic, bearer ou mtls');
+ Opt('login','','string','Jira login (email for cloud, username for '+
+   'local)@@Identifiant Jira (courriel pour cloud, nom pour local)');
+ Opt('auth-type','','string','Authentication type: basic, bearer or '+
+   'mtls@@Type d''authentification : basic, bearer ou mtls');
  Opt('project','','string','Jira project key@@Cl'+#130+' du projet Jira');
- Opt('board','','string','Jira board name ("none" for no board)@@Nom du tableau Jira ('+#174+' none '+#175+' : aucun)');
- Opt('force','','','Overwrite existing config if it exists@@'+#144+'crase la configuration existante');
+ Opt('board','','string','Jira board name ("none" for no board)@@Nom du '+
+   'tableau Jira ('+#174+' none '+#175+' : aucun)');
+ Opt('force','','','Overwrite existing config if it exists@@'+#144+
+   'crase la configuration existante');
  OptG;
  ParseArgs(ArgStart);
  ApplyGlobals;
  If CfgExists and not OptHas('force')Then Begin
   If InteractiveOk Then Begin
-   If not Confirm(Lg('Config already exists. Do you want to overwrite it?','La configuration existe d'+#130+'j'+#133+'. Voulez-vous l'''+#130+'craser ?'),False)Then Halt(0);
+   If not Confirm(Lg('Config already exists. Do you want to overwrite it?',
+     'La configuration existe d'+#130+'j'+#133+'. Voulez-vous l'''+#130+
+     'craser ?'),False)Then Halt(0);
   End
-  Else Die(Lg('Error: config already exists at ','Erreur : la configuration existe d'+#130+'j'+#133+' : ')+ConfigFile+Lg(' (use --force)',' (utilisez --force)'));
+  Else Die(Lg('Error: config already exists at ','Erreur : la configuration '+
+    'existe d'+#130+'j'+#133+' : ')+ConfigFile+Lg(' (use --force)',
+    ' (utilisez --force)'));
  End;
  NoInput:=False;
  Inst:=LoStr(OptGet('installation'));
  If Inst='' Then Begin
   If InteractiveOk Then Begin
    SClear(Opts_);SAdd(Opts_,'Cloud');SAdd(Opts_,'Local');
-   Inst:=LoStr(Opts_.A[AskSelect(Lg('Installation type','Type d''installation'),Opts_)]);
+   Inst:=LoStr(Opts_.A[AskSelect(Lg('Installation type','Type d''installation'),
+     Opts_)]);
   End
   Else Inst:='cloud';
  End;
- If(Inst<>'cloud')and(Inst<>'local')Then Die(Lg('Error: installation must be cloud or local','Erreur : installation doit valoir cloud ou local'));
+ If(Inst<>'cloud')and(Inst<>'local')Then Die(Lg('Error: installation must be '+
+   'cloud or local','Erreur : installation doit valoir cloud ou local'));
  Srv:=OptGet('server');
  If Srv='' Then Begin
-  If InteractiveOk Then Srv:=AskLine(Lg('Link to Jira server','Adresse du serveur Jira'),'')
-  Else Die(Lg('Error: --server is required','Erreur : --server est obligatoire'));
+  If InteractiveOk Then Srv:=AskLine(Lg('Link to Jira server',
+    'Adresse du serveur Jira'),'')
+  Else Die(Lg('Error: --server is required',
+    'Erreur : --server est obligatoire'));
  End;
  If(Pos('://',Srv)=0)Then Srv:='https://'+Srv;
  Srv:=StripSlash(Srv);
  Login:=OptGet('login');
  If Login='' Then Begin
-  If InteractiveOk Then Login:=AskLine(Lg('Login email or username','Courriel ou nom d''utilisateur'),'')
+  If InteractiveOk Then Login:=AskLine(Lg('Login email or username',
+    'Courriel ou nom d''utilisateur'),'')
   Else Die(Lg('Error: --login is required','Erreur : --login est obligatoire'));
  End;
  Auth:=LoStr(OptGet('auth-type'));
  If Auth='' Then Auth:='basic';
- If(Auth<>'basic')and(Auth<>'bearer')and(Auth<>'mtls')Then Die(Lg('Error: auth-type must be basic, bearer or mtls','Erreur : auth-type doit valoir basic, bearer ou mtls'));
+ If(Auth<>'basic')and(Auth<>'bearer')and(Auth<>'mtls')Then
+   Die(Lg('Error: auth-type must be basic, bearer or mtls',
+   'Erreur : auth-type doit valoir basic, bearer ou mtls'));
  If OptHas('force')Then Begin SClear(CfgY.K);SClear(CfgY.V);End;
  JServer:=Srv;JLogin:=Login;JAuth:=Auth;
  If Inst='local' Then JInstall:='Local' Else JInstall:='Cloud';
  Tok:=ApiToken;
  If Tok='' Then Begin
   If InteractiveOk Then Begin
-   Tok:=ReadSecret(Lg('? API token (not saved, export JIRA_API_TOKEN to reuse it): ','? Jeton d''API (non enregistr'+#130+', exportez JIRA_API_TOKEN pour le r'+#130+'utiliser) : '));
+   Tok:=ReadSecret(Lg('? API token (not saved, export JIRA_API_TOKEN to reuse '+
+     'it): ','? Jeton d''API (non enregistr'+#130+', exportez JIRA_API_TOKEN '+
+     'pour le r'+#130+'utiliser) : '));
    If Tok<>'' Then TokenCache:=Tok;
   End;
  End;
- If ApiToken='' Then Die(Lg('Error: set the JIRA_API_TOKEN environment variable first','Erreur : d'+#130+'finissez d''abord la variable d''environnement JIRA_API_TOKEN'));
+ If ApiToken='' Then Die(Lg('Error: set the JIRA_API_TOKEN environment '+
+   'variable first','Erreur : d'+#130+'finissez d''abord la variable '+
+   'd''environnement JIRA_API_TOKEN'));
  J:=ApiJ('GET',V2('/myself'),'');
- If J<0 Then Die(Lg('Error: unable to verify credentials','Erreur : v'+#130+'rification des identifiants impossible'));
+ If J<0 Then Die(Lg('Error: unable to verify credentials',
+   'Erreur : v'+#130+'rification des identifiants impossible'));
  { projet }
  Proj:=OptGet('project');
  If Proj='' Then Begin
@@ -5243,14 +5653,18 @@ Begin
   SClear(Opts_);
   If(J>=0)and(JP[J].Kind=JK_ARR)Then Begin
    C:=JP[J].First;
-   While C>=0 do Begin SAdd(Opts_,JS(C,'key')+'  '+JS(C,'name'));C:=JP[C].Next;End;
+   While C>=0 do Begin SAdd(Opts_,JS(C,'key')+'  '+JS(C,'name'));C:=JP[C].Next;
+     End;
   End;
-  If Opts_.N=0 Then Die(Lg('Error: no project found','Erreur : aucun projet trouv'+#130+''));
+  If Opts_.N=0 Then Die(Lg('Error: no project found','Erreur : aucun projet '+
+    'trouv'+#130+''));
   If InteractiveOk Then Begin
-   Proj:=Opts_.A[AskSelect(Lg('Default project','Projet par d'+#130+'faut'),Opts_)];
+   Proj:=Opts_.A[AskSelect(Lg('Default project','Projet par d'+#130+'faut'),
+     Opts_)];
    Proj:=Copy(Proj,1,Pos(' ',Proj)-1);
   End
-  Else Die(Lg('Error: --project is required','Erreur : --project est obligatoire'));
+  Else Die(Lg('Error: --project is required','Erreur : --project est '+
+    'obligatoire'));
  End;
  Proj:=UpStr(Proj);
  J:=ApiJ('GET',V2('/project/'+UrlEnc(Proj,False)),'');
@@ -5266,7 +5680,8 @@ Begin
    While C>=0 do Begin SAdd(Opts_,JS(C,'name'));C:=JP[C].Next;End;
   End;
   If OptHas('board')Then Brd:=OptGet('board')
-  Else If(Opts_.N>0)and InteractiveOk Then Brd:=Opts_.A[AskSelect(Lg('Default board','Tableau par d'+#130+'faut'),Opts_)]
+  Else If(Opts_.N>0)and InteractiveOk Then Brd:=Opts_.A[AskSelect(Lg('Default '+
+    'board','Tableau par d'+#130+'faut'),Opts_)]
   Else If Opts_.N>0 Then Brd:=Opts_.A[0];
  End;
  YSet(CfgY,'installation',IfThen_(Inst='local','Local','Cloud'));
@@ -5278,7 +5693,8 @@ Begin
  If Brd<>'' Then Begin
   C:=JP[B].First;
   While C>=0 do Begin
-   If JS(C,'name')=Brd Then Begin YSet(CfgY,'board|id',JS(C,'id'));YSet(CfgY,'board|name',Brd);Break;End;
+   If JS(C,'name')=Brd Then Begin YSet(CfgY,'board|id',JS(C,'id'));YSet(CfgY,
+     'board|name',Brd);Break;End;
    C:=JP[C].Next;
   End;
  End;
@@ -5291,7 +5707,8 @@ Begin
   C:=JP[C].Next;
  End;
  SaveJiraConfig;
- WriteLn(OkMark,' ',Lg('Configuration generated: ','Configuration g'+#130+'n'+#130+'r'+#130+'e : '),ConfigFile);
+ WriteLn(OkMark,' ',Lg('Configuration generated: ',
+   'Configuration g'+#130+'n'+#130+'r'+#130+'e : '),ConfigFile);
 End;
 
 Procedure CmdVersion;
@@ -5352,17 +5769,20 @@ Const
   (P:'sprint close';F:@CmdSprintClose),
   (P:'sprint list';F:@CmdSprintList),
   (P:'version';F:@CmdVersion),
-  (P:'';F:Nil),(P:'';F:Nil),(P:'';F:Nil),(P:'';F:Nil),(P:'';F:Nil),(P:'';F:Nil));
+  (P:'';F:Nil),(P:'';F:Nil),(P:'';F:Nil),(P:'';F:Nil),(P:'';F:Nil),(P:'';
+    F:Nil));
 
 Function FindDisp(Const Path:AnsiString):TProc;
 Var
  I:LongInt;
 Begin
  FindDisp:=Nil;
- For I:=0 to NDsp-1 do If(Disp[I].P<>'')and(Disp[I].P=Path)Then Begin FindDisp:=Disp[I].F;Exit;End;
+ For I:=0 to NDsp-1 do If(Disp[I].P<>'')and(Disp[I].P=Path)Then Begin FindDisp:=
+   Disp[I].F;Exit;End;
 End;
 
-{ sous-commandes (mot suivant) d'un groupe ; Group='' : commandes de premier niveau }
+{ sous-commandes (mot suivant) d'un groupe ; Group='' : commandes de premier
+  niveau }
 Procedure ChildrenOf(Const Group:AnsiString;Var L:TSList);
 Var
  I,P:LongInt;
@@ -5372,7 +5792,8 @@ Begin
  For I:=0 to NDsp-1 do Begin
   If Disp[I].P='' Then Continue;
   If Group='' Then R:=Disp[I].P
-  Else If StartsWith(Disp[I].P,Group+' ')Then R:=Copy(Disp[I].P,Length(Group)+2,Length(Disp[I].P))
+  Else If StartsWith(Disp[I].P,Group+' ')Then R:=Copy(Disp[I].P,Length(Group)+2,
+    Length(Disp[I].P))
   Else Continue;
   P:=Pos(' ',R);
   If P>0 Then W:=Copy(R,1,P-1) Else W:=R;
@@ -5410,19 +5831,27 @@ Begin
  If Group='' Then Begin
   WriteLn;
   WriteLn(Lg('Flags:','Options :'));
-  WriteLn('  -c, --config string    ',Lg('Config file (default is $HOME/.config/.jira/.config.yml)','Fichier de configuration (d'+#130+'faut : $HOME/.config/.jira/.config.yml)'));
-  WriteLn('      --debug            ',Lg('Turn on debug output','Active la sortie de d'+#130+'bogage'));
+  WriteLn('  -c, --config string    ',Lg('Config file (default is '+
+    '$HOME/.config/.jira/.config.yml)','Fichier de configuration (d'+#130+
+    'faut : $HOME/.config/.jira/.config.yml)'));
+  WriteLn('      --debug            ',Lg('Turn on debug output',
+    'Active la sortie de d'+#130+'bogage'));
   WriteLn('  -h, --help             ',Lg('help for jira','aide de jira'));
-  WriteLn('  -p, --project string   ',Lg('Jira project to look into (defaults to project in the config file)','Projet Jira '+#133+' utiliser (d'+#130+'faut : projet du fichier de configuration)'));
+  WriteLn('  -p, --project string   ',Lg('Jira project to look into (defaults '+
+    'to project in the config file)','Projet Jira '+#133+' utiliser (d'+#130+
+    'faut : projet du fichier de configuration)'));
   WriteLn('  -v, --version          ',Lg('version for jira','version de jira'));
  End
  Else Begin
   WriteLn;
   WriteLn(Lg('Flags:','Options :'));
-  WriteLn('  -h, --help   ',Lg('help for ','aide de '),Copy(Group,LastDelimPos(Group)+1,Length(Group)));
+  WriteLn('  -h, --help   ',Lg('help for ','aide de '),Copy(Group,
+    LastDelimPos(Group)+1,Length(Group)));
  End;
  WriteLn;
- WriteLn(Lg('Use "jira ','Utilisez "jira '),Pre,Lg('[command] --help" for more information about a command.','[commande] --help" pour plus d''informations.'));
+ WriteLn(Lg('Use "jira ','Utilisez "jira '),Pre,Lg('[command] --help" for '+
+   'more information about a command.','[commande] --help" pour plus '+
+   'd''informations.'));
 End;
 
 { ------------------------------------------------------------------ }
@@ -5437,7 +5866,9 @@ Var
  Words:AnsiString;
 Begin
  CmdBegin('completion','bash|zsh|fish|powershell');
- CmdExample('  # bash'#10'  source <(jira completion bash)'#10#10'  # zsh'#10'  jira completion zsh > "${fpath[1]}/_jira"'#10#10'  # fish'#10'  jira completion fish | source');
+ CmdExample('  # bash'#10'  source <(jira completion bash)'#10#10'  # zsh'#10+
+   '  jira completion zsh > "${fpath[1]}/_jira"'#10#10'  # fish'#10+
+   '  jira completion fish | source');
  OptG;
  ParseArgs(ArgStart);
  NeedArgs(1,1);
@@ -5447,13 +5878,15 @@ Begin
   WriteLn('_jira_completions() {');
   WriteLn('  local cur="${COMP_WORDS[COMP_CWORD]}"');
   WriteLn('  if [ "$COMP_CWORD" -le 1 ]; then');
-  WriteLn('    COMPREPLY=($(compgen -W "',JoinList(Top,' '),' help" -- "$cur"))');
+  WriteLn('    COMPREPLY=($(compgen -W "',JoinList(Top,' '),
+    ' help" -- "$cur"))');
   WriteLn('    return');
   WriteLn('  fi');
   WriteLn('  case "${COMP_WORDS[1]}" in');
   For I:=0 to Top.N-1 do Begin
    ChildrenOf(Top.A[I],Sub);
-   If Sub.N>0 Then WriteLn('    ',Top.A[I],') COMPREPLY=($(compgen -W "',JoinList(Sub,' '),'" -- "$cur")) ;;');
+   If Sub.N>0 Then WriteLn('    ',Top.A[I],') COMPREPLY=($(compgen -W "',
+     JoinList(Sub,' '),'" -- "$cur")) ;;');
   End;
   WriteLn('  esac');
   WriteLn('}');
@@ -5471,7 +5904,8 @@ Begin
   WriteLn('  case $words[2] in');
   For I:=0 to Top.N-1 do Begin
    ChildrenOf(Top.A[I],Sub);
-   If Sub.N>0 Then WriteLn('    ',Top.A[I],') cmds=(',JoinList(Sub,' '),'); _describe ''command'' cmds ;;');
+   If Sub.N>0 Then WriteLn('    ',Top.A[I],') cmds=(',JoinList(Sub,' '),
+     '); _describe ''command'' cmds ;;');
   End;
   WriteLn('  esac');
   WriteLn('}');
@@ -5479,31 +5913,41 @@ Begin
  End
  Else If Sh='fish' Then Begin
   WriteLn('complete -c jira -f');
-  WriteLn('complete -c jira -n ''__fish_use_subcommand'' -a ''',JoinList(Top,' '),' help''');
+  WriteLn('complete -c jira -n ''__fish_use_subcommand'' -a ''',JoinList(Top,
+    ' '),' help''');
   For I:=0 to Top.N-1 do Begin
    ChildrenOf(Top.A[I],Sub);
-   If Sub.N>0 Then WriteLn('complete -c jira -n ''__fish_seen_subcommand_from ',Top.A[I],''' -a ''',JoinList(Sub,' '),'''');
+   If Sub.N>0 Then WriteLn('complete -c jira -n ''__fish_seen_subcommand_from ',
+     Top.A[I],''' -a ''',JoinList(Sub,' '),'''');
   End;
  End
  Else If(Sh='powershell')or(Sh='pwsh')Then Begin
-  WriteLn('Register-ArgumentCompleter -Native -CommandName jira -ScriptBlock {');
+  WriteLn('Register-ArgumentCompleter -Native -CommandName jira '+
+    '-ScriptBlock {');
   WriteLn('  param($wordToComplete, $commandAst, $cursorPosition)');
-  WriteLn('  $words = $commandAst.CommandElements | ForEach-Object { $_.ToString() }');
-  WriteLn('  $top = @(',ReplaceAll('''' + JoinList(Top,''','''),'''',''''),''')');
+  WriteLn('  $words = $commandAst.CommandElements | ForEach-Object { '+
+    '$_.ToString() }');
+  WriteLn('  $top = @(',ReplaceAll('''' + JoinList(Top,''','''),'''',''''),
+    ''')');
   Words:='';
   WriteLn('  $sub = @{');
   For I:=0 to Top.N-1 do Begin
    ChildrenOf(Top.A[I],Sub);
-   If Sub.N>0 Then WriteLn('    ''',Top.A[I],''' = @(''',JoinList(Sub,''','''),''')');
+   If Sub.N>0 Then WriteLn('    ''',Top.A[I],''' = @(''',JoinList(Sub,''','''),
+     ''')');
   End;
   WriteLn('  }');
-  WriteLn('  $list = if ($words.Count -le 2) { $top } else { $sub[$words[1]] }');
-  WriteLn('  $list | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {');
-  WriteLn('    [System.Management.Automation.CompletionResult]::new($_, $_, ''ParameterValue'', $_)');
+  WriteLn('  $list = if ($words.Count -le 2) { $top } '+
+    'else { $sub[$words[1]] }');
+  WriteLn('  $list | Where-Object { $_ -like "$wordToComplete*" } | '+
+    'ForEach-Object {');
+  WriteLn('    [System.Management.Automation.CompletionResult]::new($_, $_, '+
+    '''ParameterValue'', $_)');
   WriteLn('  }');
   WriteLn('}');
  End
- Else Die(Lg('Error: unsupported shell "','Erreur : shell non pris en charge "')+Sh+'" (bash, zsh, fish, powershell)');
+ Else Die(Lg('Error: unsupported shell "','Erreur : shell non pris en charge "')
+   +Sh+'" (bash, zsh, fish, powershell)');
 End;
 
 Procedure CmdMan;
@@ -5544,8 +5988,10 @@ End;
 
 Procedure NoSuchCommand(Const Parent,Sub:AnsiString);
 Begin
- WriteLn(StdErr,'Error: unknown command "',Sub,'" for "',IfThen_(Parent='','jira','jira '+Parent),'"');
- WriteLn(StdErr,Lg('Run ''jira ','Ex'+#130+'cutez ''jira '),IfThen_(Parent='','',Parent+' '),Lg('--help'' for usage.','--help'' pour l''aide.'));
+ WriteLn(StdErr,'Error: unknown command "',Sub,'" for "',IfThen_(Parent='',
+   'jira','jira '+Parent),'"');
+ WriteLn(StdErr,Lg('Run ''jira ','Ex'+#130+'cutez ''jira '),IfThen_(Parent='',
+   '',Parent+' '),Lg('--help'' for usage.','--help'' pour l''aide.'));
  Halt(1);
 End;
 
@@ -5565,8 +6011,10 @@ Begin
  End;
 End;
 
-{ commande correspondant aux N premiers mots (synonymes du dernier mot acceptes) }
-Function Resolve(Var Words:Array of AnsiString;N:LongInt;Var Path:AnsiString):TProc;
+{ commande correspondant aux N premiers mots (synonymes du dernier mot acceptes)
+  }
+Function Resolve(Var Words:Array of AnsiString;N:LongInt;
+  Var Path:AnsiString):TProc;
 Var
  K,J:LongInt;
  Pre,Alt:AnsiString;
@@ -5597,13 +6045,15 @@ Begin
  If ParamCount=0 Then Begin PrintGroupHelp('');Halt(0);End;
  A1:=ParamStr(1);
  If(A1='--help')or(A1='-h')Then Begin PrintGroupHelp('');Halt(0);End;
- If(A1='--version')or(A1='-v')Then Begin WriteLn('jira version ',ToolVersion);Halt(0);End;
+ If(A1='--version')or(A1='-v')Then Begin WriteLn('jira version ',ToolVersion);
+   Halt(0);End;
  If A1='help' Then Begin
   Path:='';
   For I:=2 to ParamCount do Path:=Path+IfThen_(Path<>'',' ','')+ParamStr(I);
   If Path='' Then PrintGroupHelp('')
   Else If IsGroup(Path)Then PrintGroupHelp(Path)
-  Else If FindDisp(Path)<>Nil Then Halt(RunShell(Q(ParamStr(0))+' '+Path+' --help'))
+  Else If FindDisp(Path)<>Nil Then Halt(RunShell(Q(ParamStr(0))+' '+Path+
+    ' --help'))
   Else NoSuchCommand('',ParamStr(2));
   Halt(0);
  End;
@@ -5638,7 +6088,8 @@ Begin
 End;
 
 {$IFDEF WINDOWS}
-Function SetConsoleOutputCP(CP:LongWord):LongInt;stdcall;external 'kernel32.dll' name
+Function SetConsoleOutputCP(CP:LongWord):LongInt;stdcall;
+  external 'kernel32.dll' name
   'SetConsoleOutputCP';
 Function GetConsoleOutputCP:LongWord;stdcall;external 'kernel32.dll' name
   'GetConsoleOutputCP';
